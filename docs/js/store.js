@@ -5,7 +5,7 @@ const KEY = 'coffee-schedule:v1';
 const SCHEMA = 1;
 
 export const DEFAULT_SETTINGS = {
-  name: '',
+  name: 'Goombouille',
   contractHours: 35,
   defaultBreak: 30,
   showMajoration: true,
