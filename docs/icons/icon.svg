@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#66432C"/>
+      <stop offset="1" stop-color="#33211A"/>
+    </linearGradient>
+    <linearGradient id="dial" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ECB566"/>
+      <stop offset="1" stop-color="#D0822F"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <!-- feuilles d'automne -->
+  <path d="M400 70c-40 20-52 62-30 98 40-14 58-56 30-98z" fill="#D0822F" opacity=".85"/>
+  <path d="M408 384c34 6 52 34 46 66-32-4-52-30-46-66z" fill="#B5473A" opacity=".55"/>
+  <g transform="translate(256 278)">
+    <!-- vapeur -->
+    <path d="M-44 -138c-18 22 18 36 0 60M8 -150c-18 22 18 36 0 60" fill="none" stroke="#F5ECE0" stroke-width="16" stroke-linecap="round" opacity=".75"/>
+    <!-- tasse -->
+    <path d="M-120 -56h208v62a104 104 0 0 1-104 104h0A104 104 0 0 1-120 6z" fill="#F5ECE0"/>
+    <path d="M88 -32h18a40 40 0 0 1 0 80h-26" fill="none" stroke="#F5ECE0" stroke-width="24" stroke-linecap="round"/>
+    <!-- horloge -->
+    <circle cx="-16" cy="12" r="56" fill="url(#dial)"/>
+    <path d="M-16 -18v30l20 14" fill="none" stroke="#33211A" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- soucoupe -->
+    <path d="M-150 136h268" stroke="#C09A74" stroke-width="18" stroke-linecap="round"/>
+  </g>
+</svg>

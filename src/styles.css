@@ -1,0 +1,192 @@
+/* Coffee & Schedule — feuille de style source (compilée vers docs/css/app.css) */
+
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 1000;
+  src: url('../fonts/nunito.woff2') format('woff2-variations'), url('../fonts/nunito.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 300 700;
+  src: url('../fonts/fredoka.woff2') format('woff2-variations'), url('../fonts/fredoka.woff2') format('woff2');
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --bg: 245 236 224;          /* avoine */
+    --surface: 255 251 245;     /* mousse */
+    --surface-2: 249 241 230;   /* crème douce */
+    --ink: 51 33 26;            /* espresso */
+    --ink-soft: 102 67 44;      /* chocolat chaud */
+    --muted: 138 100 70;        /* noisette lisible */
+    --line: 234 219 200;        /* crème */
+    --accent: 208 130 47;       /* caramel */
+    --accent-ink: 140 78 33;    /* caramel foncé (texte) */
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: 26 17 12;
+      --surface: 39 26 19;
+      --surface-2: 50 34 25;
+      --ink: 245 236 224;
+      --ink-soft: 227 205 178;
+      --muted: 184 151 122;
+      --line: 66 46 34;
+      --accent: 226 156 69;
+      --accent-ink: 236 181 102;
+    }
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    background: rgb(var(--bg));
+  }
+
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    min-height: 100dvh;
+    overscroll-behavior-y: contain;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  button, [role='button'] { touch-action: manipulation; cursor: pointer; }
+
+  :focus-visible { outline: 3px solid rgb(var(--accent) / .55); outline-offset: 2px; }
+
+  input[type='time']::-webkit-date-and-time-value { text-align: left; }
+  input[type='time']::-webkit-calendar-picker-indicator { opacity: .45; }
+  @media (max-width: 639px) {
+    input[type='time']::-webkit-calendar-picker-indicator { display: none; }
+  }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type='number'] { -moz-appearance: textfield; }
+
+  dialog::backdrop { background: rgb(31 20 16 / .55); backdrop-filter: blur(3px); }
+}
+
+@layer components {
+  .card { @apply bg-surface rounded-3xl shadow-soft border border-line/70; }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 h-11 font-bold text-[15px]
+           transition active:scale-[.97] select-none disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary { @apply btn bg-coffee-900 text-coffee-50 shadow-lift dark:bg-caramel-400 dark:text-coffee-950; }
+  .btn-accent { @apply btn bg-caramel-500 text-white shadow-soft dark:bg-caramel-400 dark:text-coffee-950; }
+  .btn-soft { @apply btn bg-surface-2 text-ink-soft border border-line; }
+  .btn-ghost { @apply btn text-ink-soft hover:bg-surface-2; }
+  .icon-btn {
+    @apply inline-flex items-center justify-center w-11 h-11 rounded-2xl text-ink-soft
+           transition active:scale-95 hover:bg-surface-2;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-3 h-8 text-[13px] font-bold border border-line
+           bg-surface text-ink-soft transition active:scale-95;
+  }
+  .chip[aria-pressed='true'] { @apply bg-sage-100 border-sage-300 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100 dark:border-sage-700; }
+
+  .field-label { @apply block text-[11px] font-extrabold uppercase tracking-wider text-muted mb-1 pl-1; }
+  .field {
+    @apply w-full h-12 rounded-2xl bg-surface-2 border border-line px-3 text-[16px] font-bold text-ink
+           appearance-none outline-none transition placeholder:text-muted/60 placeholder:font-semibold
+           focus:border-accent focus:bg-surface focus:ring-4 focus:ring-accent/15;
+    min-width: 0;
+  }
+  .field-suffix { @apply absolute right-3 top-1/2 -translate-y-1/2 text-[13px] font-bold text-muted pointer-events-none; }
+
+  .seg { @apply grid grid-cols-2 p-1 rounded-2xl bg-surface-2 border border-line; }
+  .seg button { @apply h-10 rounded-xl text-sm font-extrabold text-muted transition; }
+  .seg button[aria-pressed='true'] { @apply bg-surface text-ink shadow-soft; }
+
+  .sheet {
+    @apply m-0 mt-auto w-full max-w-none max-h-[92dvh] rounded-t-4xl bg-bg text-ink p-0 border-0 shadow-lift;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  @media (min-width: 640px) {
+    .sheet { @apply m-auto max-w-md rounded-4xl; }
+  }
+  .sheet[open] { animation: sheet-in .28s cubic-bezier(.2, .9, .3, 1.1); }
+  .sheet-grip { @apply mx-auto mt-2.5 mb-1 h-1.5 w-11 rounded-full bg-line; }
+
+  .progress-overtime {
+    background-image: repeating-linear-gradient(135deg, rgb(255 255 255 / .22) 0 6px, transparent 6px 12px),
+      linear-gradient(90deg, #E29C45, #D0822F);
+  }
+}
+
+@layer utilities {
+  .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .pt-safe { padding-top: env(safe-area-inset-top); }
+  .scrollbar-none { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes pop {
+  0% { transform: scale(.96); opacity: .4; }
+  100% { transform: none; opacity: 1; }
+}
+.animate-pop { animation: pop .22s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- Carte de partage « Coffee & Schedule » (couleurs fixes, toujours claire) ---------- */
+.share-card {
+  width: 360px;
+  font-family: 'Nunito', system-ui, sans-serif;
+  color: #33211A;
+  background: #FBF7F1;
+  border-radius: 28px;
+  overflow: hidden;
+  font-feature-settings: 'tnum' 1;
+}
+.share-card .sc-head {
+  position: relative;
+  padding: 22px 22px 46px;
+  color: #F5ECE0;
+  background: linear-gradient(150deg, #4A3021 0%, #33211A 70%);
+}
+.share-card .sc-title { font-family: 'Fredoka', 'Nunito', sans-serif; font-weight: 600; font-size: 22px; line-height: 1.1; letter-spacing: -.01em; }
+.share-card .sc-kicker { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #ECB566; }
+.share-card .sc-week { margin-top: 4px; font-size: 14px; font-weight: 700; color: #D8BFA0; }
+.share-card .sc-body { position: relative; margin: -30px 14px 0; background: #FFFFFF; border-radius: 22px; padding: 6px 14px; box-shadow: 0 10px 24px -14px rgba(51, 33, 26, .45); }
+.share-card .sc-row { display: flex; align-items: center; gap: 12px; padding: 9px 2px; border-bottom: 1px dashed #EADBC8; }
+.share-card .sc-row:last-child { border-bottom: 0; }
+.share-card .sc-day { width: 44px; flex: none; text-align: center; line-height: 1; }
+.share-card .sc-day b { display: block; font-family: 'Fredoka', 'Nunito', sans-serif; font-weight: 600; font-size: 19px; color: #33211A; }
+.share-card .sc-day span { display: block; margin-top: 3px; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #A07652; }
+.share-card .sc-main { flex: 1; min-width: 0; }
+.share-card .sc-hours { display: flex; align-items: center; gap: 6px; font-size: 15px; line-height: 20px; font-weight: 800; color: #33211A; }
+.share-card .sc-sub { margin-top: 1px; font-size: 11.5px; line-height: 16px; padding-bottom: 1px; font-weight: 700; color: #A07652; }
+.share-card .sc-dur { flex: none; font-size: 14px; font-weight: 800; color: #66432C; }
+.share-card .sc-row.is-off .sc-hours { color: #86965F; }
+.share-card .sc-row.is-off .sc-day b { color: #86965F; }
+.share-card .sc-pill { flex: none; font-size: 12px; font-weight: 800; color: #B06625; }
+.share-card .sc-foot { padding: 14px 18px 18px; }
+.share-card .sc-totals { display: flex; gap: 8px; }
+.share-card .sc-total { flex: 1; background: #F5ECE0; border-radius: 16px; padding: 10px 12px; }
+.share-card .sc-total small { display: block; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #A07652; }
+.share-card .sc-total strong { display: block; margin-top: 2px; font-family: 'Fredoka', 'Nunito', sans-serif; font-weight: 600; font-size: 21px; color: #33211A; }
+.share-card .sc-total.is-over { background: linear-gradient(135deg, #ECB566, #D0822F); }
+.share-card .sc-total.is-over small { color: #6E3E1F; }
+.share-card .sc-total.is-over strong { color: #FFFFFF; }
+.share-card .sc-sign { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 700; color: #C09A74; }
