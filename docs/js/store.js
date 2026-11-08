@@ -1,5 +1,5 @@
 // Stockage 100 % local (localStorage) + calculs de la semaine.
-import { shiftMinutes } from './time.js';
+import { addDays, mondayOf, shiftMinutes, toKey } from './time.js';
 
 const KEY = 'coffee-schedule:v1';
 const SCHEMA = 1;
@@ -176,5 +176,63 @@ export function weekStats(week, settings = state.settings) {
     hasActual: actualDays > 0,
     at25: Math.min(ot, 8 * 60),
     at50: Math.max(0, ot - 8 * 60),
+  };
+}
+
+/**
+ * Totaux d'un mois (month : 0-11).
+ * - planned / actual : somme des jours dont la date tombe dans le mois
+ * - overtime : les heures supp. se calculent par SEMAINE (au-delà du contrat) ;
+ *   une semaine à cheval sur deux mois compte dans le mois où elle se termine (dimanche).
+ * - base : contrat mensualisé (35 h × 52 / 12 = 151h40)
+ */
+export function monthStats(year, month, settings = state.settings) {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  let planned = 0, actual = 0, actualDays = 0, workedDays = 0, offDays = 0;
+  let overtime = 0, plannedOvertime = 0, at25 = 0, at50 = 0;
+  const weeks = [];
+
+  for (let monday = mondayOf(first); monday <= last; monday = addDays(monday, 7)) {
+    const key = toKey(monday);
+    const week = state.weeks[key] || null;
+    const sunday = addDays(monday, 6);
+    const ws = week ? weekStats(week, settings) : null;
+    let inPlanned = 0, inActual = 0, inActualDays = 0, inDays = 0;
+
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(monday, i);
+      if (date.getMonth() !== month) continue;
+      inDays++;
+      if (!ws) continue;
+      const s = ws.days[i];
+      if (s.off) { offDays++; continue; }
+      if (s.planned) inPlanned += s.planned;
+      if (s.actual != null) { inActual += s.actual; inActualDays++; }
+      if (s.planned || s.actual) workedDays++;
+    }
+
+    const countsHere = sunday.getMonth() === month;
+    if (ws && countsHere) {
+      if (ws.hasActual) {
+        overtime += Math.max(0, ws.overtime);
+        at25 += ws.at25;
+        at50 += ws.at50;
+      }
+      plannedOvertime += Math.max(0, ws.plannedOvertime);
+    }
+
+    planned += inPlanned;
+    actual += inActual;
+    actualDays += inActualDays;
+    weeks.push({ monday, key, ws, inPlanned, inActual, inActualDays, straddles: inDays < 7, countsHere });
+  }
+
+  return {
+    year, month, weeks,
+    planned, actual, actualDays, workedDays, offDays,
+    hasActual: actualDays > 0,
+    overtime, plannedOvertime, at25, at50,
+    base: Math.round((settings.contractHours * 60 * 52) / 12),
   };
 }

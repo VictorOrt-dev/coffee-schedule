@@ -60,6 +60,10 @@ export function weekRangeLong(monday) {
 
 export const monthShort = (d) => MONTHS_SHORT[d.getMonth()];
 
+/** (2026, 10) -> "novembre 2026" */
+export const monthLabel = (year, month) => `${MONTHS[month]} ${year}`;
+export const monthName = (month) => MONTHS[month];
+
 /** "08:30" -> 510 (minutes) ; null si vide/invalide */
 export function parseHM(hm) {
   if (!hm || typeof hm !== 'string') return null;

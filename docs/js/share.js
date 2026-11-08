@@ -1,5 +1,5 @@
 // Carte « Coffee & Schedule » : génération HTML, export PNG (html2canvas) et partage natif.
-import { DAY_NAMES, DAY_SHORT, addDays, fmtClock, fmtDur, isoWeek, weekRangeLong, weekRangeShort } from './time.js';
+import { DAY_NAMES, DAY_SHORT, addDays, fmtClock, fmtDur, isoWeek, monthLabel, weekRangeLong, weekRangeShort } from './time.js';
 import { weekStats } from './store.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -142,6 +142,24 @@ export function buildText(week, monday, settings, mode = 'planning') {
   } else {
     lines.push(`Total prévu : ${fmtDur(st.planned)} (contrat ${fmtDur(st.contract)})`);
     if (st.plannedOvertime > 0) lines.push(`Dont ${fmtDur(st.plannedOvertime, { sign: true })} d'heures supp. prévues`);
+  }
+  return lines.join('\n');
+}
+
+/** Résumé texte du mois (stats issues de store.monthStats) */
+export function buildMonthText(ms) {
+  const lines = [`☕ Mon mois – ${monthLabel(ms.year, ms.month)}`, ''];
+  if (ms.hasActual) lines.push(`Total effectué : ${fmtDur(ms.actual)} (prévu ${fmtDur(ms.planned)})`);
+  else lines.push(`Total prévu : ${fmtDur(ms.planned)}`);
+  if (ms.overtime > 0) lines.push(`Heures supp. : ${fmtDur(ms.overtime, { sign: true })}`);
+  lines.push(`Jours travaillés : ${ms.workedDays} · off : ${ms.offDays}`);
+  lines.push('');
+  for (const w of ms.weeks) {
+    if (!w.ws) continue;
+    const ot = w.countsHere && w.ws.hasActual && w.ws.overtime > 0 ? ` · ${fmtDur(w.ws.overtime, { sign: true })} supp.` : '';
+    if (!w.inPlanned && !w.inActual && !ot) continue;
+    const val = w.inActualDays ? fmtDur(w.inActual) : w.inPlanned ? `${fmtDur(w.inPlanned)} prévu` : '0h';
+    lines.push(`• S${isoWeek(w.monday)} (${weekRangeShort(w.monday)}) : ${val}${w.straddles ? ' sur le mois' : ''}${ot}`);
   }
   return lines.join('\n');
 }

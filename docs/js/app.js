@@ -1,12 +1,12 @@
 // Coffee & Schedule — application principale (Vanilla JS, modules ES).
 import {
   DAY_NAMES, DAY_SHORT, addDays, addMinutesHM, fmtClock, fmtDur, fromKey, isoWeek,
-  mondayOf, sameDay, shiftMinutes, toKey, weekRangeShort,
+  monthLabel, monthName, mondayOf, sameDay, shiftMinutes, toKey, weekRangeShort,
 } from './time.js';
 import * as store from './store.js';
-import { buildCardHTML, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
+import { buildCardHTML, buildMonthText, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const icon = (name, cls = 'w-4 h-4') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -58,7 +58,8 @@ function renderHeader() {
   const h = new Date().getHours();
   const hello = h < 5 ? 'Bonne nuit' : h < 12 ? 'Bonjour' : h < 18 ? 'Bel après-midi' : 'Bonsoir';
   const name = settings().name?.trim();
-  $('#greeting').textContent = `${hello}${name ? ' ' + name : ''} ☕︎`;
+  $('#hello').textContent = `${hello} ☕︎`;
+  $('#greeting').textContent = name || 'Coffee & Schedule';
 }
 
 function renderWeekNav() {
@@ -148,7 +149,126 @@ function renderSummary() {
       ${mini('Prévu', fmtDur(st.planned))}
       ${mini('Effectué', st.hasActual ? fmtDur(st.actual) : '—')}
       ${mini('Écart', st.diffVsPlanned == null ? '—' : fmtDur(st.diffVsPlanned, { sign: true }), st.diffVsPlanned > 0 ? 'text-accent-ink' : '')}
+    </div>
+    ${monthTeaserHTML()}`;
+}
+
+/** Mois « de référence » de la semaine affichée (celui de son jeudi). */
+const weekMonth = () => { const t = addDays(monday, 3); return { y: t.getFullYear(), m: t.getMonth() }; };
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+function monthTeaserHTML() {
+  const { y, m } = weekMonth();
+  const ms = store.monthStats(y, m);
+  let line;
+  if (ms.hasActual) line = ms.overtime > 0
+    ? `${fmtDur(ms.actual)} · <span class="text-accent-ink">${fmtDur(ms.overtime, { sign: true })} supp.</span>`
+    : `${fmtDur(ms.actual)} effectuées`;
+  else if (ms.planned) line = `${fmtDur(ms.planned)} prévues`;
+  else line = 'Rien de saisi pour le moment';
+  return `
+    <button type="button" data-act="open-month" class="relative mt-3 w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left border border-caramel-200/80 bg-caramel-50/80 dark:border-caramel-900/60 dark:bg-caramel-900/20 active:scale-[.98] transition">
+      <span class="flex-none w-9 h-9 rounded-xl grid place-items-center bg-caramel-100 text-caramel-700 dark:bg-caramel-900/50 dark:text-caramel-200">${icon('calendar', 'w-[18px] h-[18px]')}</span>
+      <span class="flex-1 min-w-0">
+        <span class="block text-[11px] font-extrabold uppercase tracking-wider text-accent-ink">Total ${monthName(m)}</span>
+        <span class="block font-bold text-[15px] truncate">${line}</span>
+      </span>
+      ${icon('right', 'w-5 h-5 text-accent-ink flex-none')}
+    </button>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Total du mois                                                       */
+/* ------------------------------------------------------------------ */
+const dlgMonth = $('#dlg-month');
+let monthCursor = weekMonth();
+
+function openMonth(cursor = weekMonth()) {
+  monthCursor = cursor;
+  renderMonth();
+  openDialog(dlgMonth);
+}
+
+function shiftMonth(delta) {
+  const d = new Date(monthCursor.y, monthCursor.m + delta, 1);
+  monthCursor = { y: d.getFullYear(), m: d.getMonth() };
+  renderMonth();
+}
+
+function renderMonth() {
+  const ms = store.monthStats(monthCursor.y, monthCursor.m);
+  $('#month-label').textContent = cap(monthLabel(ms.year, ms.month));
+  const useActual = ms.hasActual;
+  const value = useActual ? ms.actual : ms.planned;
+  const scale = Math.max(ms.base * 1.15, value, ms.planned, 1);
+  const pct = (v) => `${Math.min(100, (v / scale) * 100).toFixed(2)}%`;
+  const over = Math.max(0, value - ms.base);
+  const mini = (label, val, cls = '') => `
+    <div class="rounded-2xl bg-surface-2 border border-line/70 px-2 py-2">
+      <p class="text-[10px] font-extrabold uppercase tracking-wider text-muted">${label}</p>
+      <p class="font-display text-[17px] font-semibold ${cls}">${val}</p>
     </div>`;
+  const maj = settings().showMajoration && ms.overtime > 0
+    ? `<p class="mt-2 text-xs font-bold text-muted">dont ${fmtDur(ms.at25)} à +25 %${ms.at50 ? ` et ${fmtDur(ms.at50)} à +50 %` : ''} <span class="opacity-70">(indicatif)</span></p>`
+    : '';
+
+  const rows = ms.weeks.map((w) => {
+    const empty = !w.ws || (!w.inPlanned && !w.inActual && !w.ws.offDays);
+    const useA = w.inActualDays > 0;
+    const val = useA ? w.inActual : w.inPlanned;
+    const full = w.ws ? (w.ws.hasActual ? w.ws.actual : w.ws.planned) : 0;
+    let sub;
+    if (empty) sub = 'Rien de saisi';
+    else if (w.straddles) sub = `${val ? `${useA ? 'effectué' : 'prévu'} sur ce mois` : 'aucune heure ce mois'} · semaine entière ${fmtDur(full)}`;
+    else sub = useA ? 'effectué' : 'prévu';
+    let ot = '';
+    if (w.ws?.hasActual && w.ws.overtime > 0) {
+      ot = w.countsHere
+        ? `<span class="block text-[11px] font-extrabold text-accent-ink">${fmtDur(w.ws.overtime, { sign: true })} supp.</span>`
+        : `<span class="block text-[11px] font-bold text-muted">supp. → ${monthName(addDays(w.monday, 6).getMonth())}</span>`;
+    }
+    return `
+      <button type="button" data-week="${w.key}" class="w-full flex items-center gap-3 p-3 rounded-2xl bg-surface border border-line text-left active:scale-[.98] transition ${empty ? 'opacity-60' : ''}">
+        <span class="flex-none w-12 h-12 rounded-2xl grid place-items-center leading-none bg-surface-2">
+          <span class="text-center"><span class="block text-[10px] font-extrabold uppercase tracking-wider text-muted">Sem.</span><span class="block font-display text-lg font-semibold mt-0.5">${isoWeek(w.monday)}</span></span>
+        </span>
+        <span class="flex-1 min-w-0">
+          <span class="block font-bold text-[15px]">${weekRangeShort(w.monday)}</span>
+          <span class="block text-[12px] font-semibold text-muted leading-snug">${sub}</span>
+        </span>
+        <span class="flex-none text-right">
+          <span class="block font-display text-lg font-semibold leading-tight ${useA ? '' : 'text-ink-soft'}">${empty ? '—' : fmtDur(val)}</span>${ot}
+        </span>
+      </button>`;
+  }).join('');
+
+  $('#month-body').innerHTML = `
+    <section class="card p-5 mt-3">
+      <p class="text-[11px] font-extrabold uppercase tracking-wider text-muted">${useActual ? 'Effectué' : 'Prévu'} ce mois</p>
+      <p class="font-display text-[44px] leading-[1.05] font-semibold tracking-tight">${fmtDur(value)}<span class="font-sans text-lg font-bold text-muted"> / ${fmtDur(ms.base)}</span></p>
+      <div class="relative mt-5 mb-6" role="img" aria-label="${fmtDur(value)} sur une base mensuelle de ${fmtDur(ms.base)}">
+        <div class="h-4 rounded-full bg-surface-2 border border-line overflow-hidden relative">
+          <div class="absolute inset-y-0 left-0 ${over ? '' : 'rounded-r-full'} ${useActual ? 'bg-coffee-700 dark:bg-coffee-300' : 'bg-coffee-400'} transition-[width] duration-500" style="width:${pct(Math.min(value, ms.base))}"></div>
+          <div class="absolute inset-y-0 progress-overtime rounded-r-full" style="left:${pct(ms.base)};width:${over ? pct(over) : '0'}"></div>
+        </div>
+        <span class="absolute -top-1.5 -bottom-1.5 w-[3px] -ml-[1.5px] rounded-full bg-ink/80" style="left:${pct(ms.base)}"></span>
+        <span class="absolute top-full mt-1 -translate-x-1/2 text-[11px] font-extrabold text-ink-soft whitespace-nowrap" style="left:${pct(ms.base)}">${fmtDur(ms.base)}</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-center">
+        ${mini('Prévu', fmtDur(ms.planned))}
+        ${mini('Effectué', ms.hasActual ? fmtDur(ms.actual) : '—')}
+        ${mini('Supp.', ms.overtime > 0 ? fmtDur(ms.overtime, { sign: true }) : '0h', ms.overtime > 0 ? 'text-accent-ink' : '')}
+      </div>
+      ${maj}
+      <p class="mt-3 text-sm font-semibold text-ink-soft">${ms.workedDays} jour${ms.workedDays > 1 ? 's' : ''} travaillé${ms.workedDays > 1 ? 's' : ''} · ${ms.offDays} off</p>
+    </section>
+    <h3 class="field-label mt-5">Semaine par semaine</h3>
+    <div class="flex flex-col gap-2">${rows}</div>
+    <p class="mt-3 text-xs font-semibold text-muted leading-relaxed">
+      Le total compte les jours du mois. Les heures supp. se calculent par semaine (au-delà de ${fmtDur(Math.round(settings().contractHours * 60))}) ;
+      une semaine à cheval sur deux mois compte dans le mois où elle se termine.
+      Base mensualisée : ${fmtDur(Math.round(settings().contractHours * 60))} × 52 / 12 = ${fmtDur(ms.base)}.
+    </p>`;
 }
 
 function renderTools() {
@@ -608,6 +728,24 @@ function bind() {
   $('#tools').addEventListener('click', onToolsClick);
 
   $('#btn-share').addEventListener('click', openShare);
+  $('#btn-month').addEventListener('click', () => openMonth());
+  $('#summary').addEventListener('click', (e) => e.target.closest('[data-act="open-month"]') && openMonth());
+  $('#prev-month').addEventListener('click', () => shiftMonth(-1));
+  $('#next-month').addEventListener('click', () => shiftMonth(1));
+  $('#month-body').addEventListener('click', (e) => {
+    const row = e.target.closest('[data-week]');
+    if (!row) return;
+    closeDialog(dlgMonth);
+    goToWeek(fromKey(row.dataset.week));
+  });
+  $('#month-share').addEventListener('click', async () => {
+    try {
+      const r = await shareText(buildMonthText(store.monthStats(monthCursor.y, monthCursor.m)), 'Mon mois');
+      if (r === 'copied') toast('Texte copié — colle-le dans ton message 📋');
+    } catch {
+      toast('Partage indisponible sur cet appareil');
+    }
+  });
   $$('[data-mode]', dlgShare).forEach((b) => b.addEventListener('click', () => {
     if (shareMode === b.dataset.mode) return;
     shareMode = b.dataset.mode;

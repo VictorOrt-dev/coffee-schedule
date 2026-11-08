@@ -7,6 +7,7 @@ coffee shop d'automne.
 - **Saisie par semaine** (lundi → dimanche) : horaires prévus et réels, pause, note, bouton « Off »
 - **Raccourcis** : « Comme prévu », +15 min / +30 min / +1 h, copie de la semaine dernière, validation des jours passés en un tap, annulation
 - **Calculs en direct** : total prévu, total effectué, heures supp. (« 39h30 effectuées = +4h30 supp. »), jauge vs contrat, détail indicatif des majorations (+25 % / +50 %)
+- **Total du mois** (bouton 📅 ou encart « Total novembre ») : heures prévues et effectuées du mois, heures supp., jours travaillés, comparaison à la base mensualisée (35 h × 52 / 12 = 151h40), détail semaine par semaine et partage en texte. Les heures supp. restent calculées par semaine ; une semaine à cheval compte dans le mois où elle se termine
 - **Planning propre** : carte « Coffee & Schedule » en PNG (html2canvas, ×3 = 1188 px de large), en version *Planning prévu* ou *Bilan effectué*, partagée via l'API Web Share (WhatsApp, SMS…), ou téléchargée, ou envoyée en texte
 - **100 % local** : `localStorage`, sans compte ni serveur. Export / import d'une sauvegarde JSON
 - **PWA** : installable sur l'écran d'accueil, fonctionne hors-ligne (Service Worker), mode sombre « espresso » automatique
