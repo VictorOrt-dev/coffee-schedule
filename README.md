@@ -16,7 +16,7 @@ coffee shop d'automne.
   - ☀️ **Été** (juin–août) : sable, iced latte & menthe, rondelles de citron, bulles qui remontent, halo de soleil
   - 🍂 **Automne** (sept.–nov.) : caramel & avoine, feuilles mortes
   - Logo, messages des jours off, idées de notes et carte de partage changent aussi (la carte prend la saison de la semaine partagée). Mode sombre décliné pour chaque saison ; animations désactivables
-- **Goombouille, la mascotte** (désactivable dans les réglages) : petite châtaigne pâtissière (dessin original) sur l'écran d'accueil, avec une tenue par saison (bonnet et chocolat chaud, couronne de fleurs, chapeau de paille et iced latte, feuille et latte cannelle). Elle réagit à la semaine : fatiguée en cas d'heures supp., yeux étoilés quand le contrat est pile rempli, endormie les jours off, rappel des horaires du jour… et lance une phrase de saison quand on la touche
+- **Goombouille, la mascotte** (désactivable dans les réglages) : un petit Goomba dessiné à la main en SVG sur l'écran d'accueil, avec une tenue par saison (bonnet + chocolat chaud, couronne de fleurs, chapeau de paille + iced latte, feuille + citrouille). Son humeur suit les heures : content, fatigué (heures supp.), grognon façon Goomba classique (4 h supp. ou plus), yeux étoilés (contrat pile), endormi les jours off. Une phrase de saison quand on le touche
 - **PWA** : installable sur l'écran d'accueil, fonctionne hors-ligne (Service Worker), mode sombre « espresso » automatique
 
 ## Structure
@@ -35,7 +35,7 @@ coffee-schedule/
 │   │   ├── store.js               # localStorage + calculs de la semaine
 │   │   ├── share.js               # Carte, export PNG, Web Share, texte
 │   │   ├── seasons.js             # Ambiances de saison : textes, décors, logo, particules
-│   │   ├── mascot.js              # Goombouille : dessin SVG, tenues, humeurs, phrases
+│   │   ├── mascot.js              # Goombouille (petit Goomba) : dessin SVG, tenues, humeurs, phrases
 │   │   └── time.js                # Dates, semaines ISO, durées
 │   ├── fonts/                     # Nunito + Fredoka (auto-hébergées)
 │   ├── vendor/html2canvas.min.js  # Chargé à la demande

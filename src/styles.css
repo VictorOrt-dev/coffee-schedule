@@ -366,6 +366,6 @@
 @keyframes gb-bob { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.03, .97); } }
 @keyframes gb-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
 @keyframes gb-zzz { 0%, 100% { transform: translateY(0); opacity: .9; } 50% { transform: translateY(-3px); opacity: .5; } }
-@keyframes gb-fly { from { transform: translate(12px, 22px) rotate(-8deg); } to { transform: translate(16px, 17px) rotate(8deg); } }
+@keyframes gb-fly { from { transform: translate(88px, 20px) rotate(-8deg); } to { transform: translate(84px, 15px) rotate(8deg); } }
 @keyframes gb-jump { 0% { transform: translateY(0); } 40% { transform: translateY(-14px) rotate(-4deg); } 100% { transform: translateY(0); } }
 .gb-bubble-in { animation: pop .25s ease-out; }

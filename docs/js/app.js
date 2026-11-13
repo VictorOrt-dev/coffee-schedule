@@ -295,6 +295,9 @@ function mascotState() {
 
   if (mascotOverride) return { mood: mascotOverride.mood, text: mascotOverride.text };
   if (today?.off) return { mood: 'sleep', text: `Jour off aujourd'hui… Zzz. Repose-toi bien ${name} !` };
+  if (st.hasActual && st.overtime >= 4 * 60) {
+    return { mood: 'angry', text: `Grrr… ${fmtDur(st.overtime, { sign: true })} supp. cette semaine, c'est beaucoup là ! 😤` };
+  }
   if (st.hasActual && st.overtime > 0) {
     return { mood: 'tired', text: `Ouf, ${fmtDur(st.overtime, { sign: true })} supp. cette semaine ! Courage ${name} 💪` };
   }
@@ -315,8 +318,8 @@ function renderMascot() {
   const key = `${season}|${mood}`;
   if (key !== mascotKey || !$('#gb-btn')) {
     host.innerHTML = `
-      <button id="gb-btn" type="button" class="flex-none -ml-1 -mb-1 w-[76px] h-[76px] active:scale-95 transition" aria-label="Goombouille, ta mascotte : touche-la pour une nouvelle phrase">
-        ${goombouilleSVG(season, mood)}
+      <button id="gb-btn" type="button" class="flex-none -ml-1 -mb-1 w-[86px] h-[86px] active:scale-95 transition" aria-label="Goombouille, ta mascotte : touche-la pour une nouvelle phrase">
+        ${goombouilleSVG(season, mood, 86)}
       </button>
       <div class="relative flex-1 min-w-0 mb-3 card px-3.5 py-2.5">
         <span class="absolute -left-[7px] bottom-4 w-3 h-3 rotate-45 bg-surface border-l border-b border-line/70"></span>
