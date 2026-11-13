@@ -11,6 +11,7 @@ coffee shop d'automne.
 - **Horaires types** (Ouverture, Journée, Fermeture… modifiables dans les réglages) : un bouton remplit la journée, et la feuille « Planifier la semaine » règle les 7 jours en quelques appuis
 - **Jours fériés** français calculés automatiquement (Pâques, Ascension, Pentecôte comprises), signalés sur chaque jour
 - **Congés & absences** : Off, Congé payé, Férié chômé, Maladie. Les absences payées complètent le contrat (contrat/5 par jour) sans créer d'heures supp. Solde de congés : on recopie celui de la fiche de paie, l'app déduit les congés posés ensuite
+- **Jours fériés travaillés (convention HCR)** : badge « travaillé », rappel des règles, et bilan annuel des 6 fériés garantis (chômés, récups « 🔄 Récup » prises, fériés payés sur la fiche de paie) avec le nombre restant à obtenir avant le 31 décembre. Le 1er mai travaillé est signalé comme payé double, avec estimation
 - **Estimation en euros** avec le taux horaire brut : valeur des heures supp. majorées (semaine, mois, année) et salaire brut mensuel estimé
 - **Stats** (Mes bilans → Année & stats) : heures de l'année, heures supp., moyenne par semaine, graphiques des 8 dernières semaines et des 12 mois, congés restants
 - **Export calendrier** (.ics) de la semaine ou du mois : sur iPhone, l'écran « Ajouter au calendrier » s'ouvre directement

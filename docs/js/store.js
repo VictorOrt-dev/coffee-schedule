@@ -1,5 +1,6 @@
 // Stockage 100 % local (localStorage) + calculs de la semaine.
 import { addDays, mondayOf, shiftMinutes, toKey } from './time.js';
+import { holidaysOf } from './holidays.js';
 
 const KEY = 'coffee-schedule:v1';
 const SCHEMA = 1;
@@ -15,6 +16,9 @@ export const DEFAULT_SETTINGS = {
   hourlyRate: null,        // taux horaire brut (€) pour les estimations
   leaveBalance: null,      // solde de congés payés (jours) lu sur la fiche de paie…
   leaveBalanceDate: null,  // …à cette date ("YYYY-MM-DD")
+  convention: 'hcr',       // 'hcr' (hôtels, cafés, restaurants) | 'other'
+  seniority1y: true,       // au moins 1 an d'ancienneté (jours fériés garantis HCR)
+  feriesPaid: {},          // { "2026": 1 } jours fériés garantis indemnisés sur la fiche de paie
   templates: [             // horaires types (boutons rapides)
     { id: 't1', name: 'Ouverture', start: '06:30', end: '14:30', brk: 30 },
     { id: 't2', name: 'Journée', start: '09:00', end: '17:00', brk: 30 },
@@ -28,6 +32,7 @@ export const DAY_KINDS = {
   cp: { label: 'Congé payé', short: 'Congé', emoji: '🌴', paid: true },
   ferie: { label: 'Férié', short: 'Férié', emoji: '🎉', paid: true },
   maladie: { label: 'Maladie', short: 'Maladie', emoji: '🤒', paid: true },
+  recup: { label: 'Récup. férié', short: 'Récup', emoji: '🔄', paid: true },
 };
 
 export const blankShift = () => ({ start: '', end: '', brk: null });
@@ -59,6 +64,10 @@ function normalize(raw) {
   out.settings.mascot = out.settings.mascot !== false;
   const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
   out.settings.hourlyRate = num(out.settings.hourlyRate);
+  if (!['hcr', 'other'].includes(out.settings.convention)) out.settings.convention = 'hcr';
+  out.settings.seniority1y = out.settings.seniority1y !== false;
+  const fp = out.settings.feriesPaid && typeof out.settings.feriesPaid === 'object' ? out.settings.feriesPaid : {};
+  out.settings.feriesPaid = Object.fromEntries(Object.entries(fp).filter(([y]) => /^\d{4}$/.test(y)).map(([y, n]) => [y, clampNum(n, 0, 11, 0)]));
   out.settings.leaveBalance = num(out.settings.leaveBalance);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(out.settings.leaveBalanceDate || '')) out.settings.leaveBalanceDate = null;
   const hm = (v) => (/^\d{2}:\d{2}$/.test(v || '') ? v : '');
@@ -189,7 +198,7 @@ export function dayStats(day) {
 export function weekStats(week, settings = state.settings) {
   const contract = Math.round(settings.contractHours * 60);
   let planned = 0, actual = 0, actualDays = 0, plannedDays = 0, offDays = 0, diffSum = 0, diffDays = 0;
-  const kinds = { cp: 0, ferie: 0, maladie: 0 };
+  const kinds = { cp: 0, ferie: 0, maladie: 0, recup: 0 };
   const days = week.days.map((d) => {
     const s = dayStats(d);
     if (s.off) { offDays++; if (DAY_KINDS[d.kind]?.paid) kinds[d.kind]++; }
@@ -201,7 +210,7 @@ export function weekStats(week, settings = state.settings) {
   const overtime = actual - contract;
   // Absences payées (congé, férié, maladie) : créditées de contrat/5 par jour.
   // Elles complètent le contrat mais ne créent jamais d'heures supp. (pas du travail effectif).
-  const absenceDays = kinds.cp + kinds.ferie + kinds.maladie;
+  const absenceDays = kinds.cp + kinds.ferie + kinds.maladie + kinds.recup;
   const absence = absenceDays * Math.round(contract / 5);
   const plannedOvertime = planned - contract;
   const ot = Math.max(0, overtime);
@@ -237,7 +246,7 @@ export function monthStats(year, month, settings = state.settings) {
   const last = new Date(year, month + 1, 0);
   let planned = 0, actual = 0, actualDays = 0, workedDays = 0, offDays = 0;
   let overtime = 0, plannedOvertime = 0, at25 = 0, at50 = 0;
-  const kinds = { cp: 0, ferie: 0, maladie: 0 };
+  const kinds = { cp: 0, ferie: 0, maladie: 0, recup: 0 };
   const weeks = [];
 
   for (let monday = mondayOf(first); monday <= last; monday = addDays(monday, 7)) {
@@ -349,5 +358,48 @@ export function yearStats(year, settings = state.settings) {
     year, months, actual, planned, workedDays, kinds,
     overtime, at25, at50, weeksWithActual,
     avgWeek: weeksWithActual ? Math.round(weeklyActual / weeksWithActual) : 0,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Jours fériés & convention HCR                                       */
+/* ------------------------------------------------------------------ */
+export const HCR_GUARANTEED = 6;
+
+/**
+ * Bilan des jours fériés d'une année (convention HCR).
+ * Avec 1 an d'ancienneté : 6 jours fériés garantis par an (hors 1er mai), obtenus en étant
+ * chômés, ou compensés (jour de récup ou indemnité) s'ils sont travaillés ou tombent sur un repos.
+ * Le 1er mai travaillé est payé double (Code du travail).
+ */
+export function feriesStatus(year, settings = state.settings, today = new Date()) {
+  const todayKey = toKey(today);
+  const list = [];
+  for (const [key, name] of holidaysOf(year)) {
+    const [y, m, d] = key.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const w = state.weeks[toKey(mondayOf(date))];
+    const day = w ? w.days[(date.getDay() + 6) % 7] : null;
+    const future = key > todayKey;
+    let status;
+    if (day?.off) status = day.kind === 'ferie' ? 'chome' : 'repos';
+    else if (day && (shiftMinutes(day.actual) != null || shiftMinutes(day.planned))) status = 'travaille';
+    else status = future ? 'avenir' : 'nonsaisi';
+    const worked = status === 'travaille' ? (shiftMinutes(day.actual) ?? shiftMinutes(day.planned) ?? 0) : 0;
+    list.push({ key, date, name, status, future, worked, mai1: m === 5 && d === 1 });
+  }
+  let recups = 0;
+  eachDay((date, day) => { if (date.getFullYear() === year && day.off && day.kind === 'recup') recups++; });
+  const others = list.filter((h) => !h.mai1);
+  const count = (st) => others.filter((h) => h.status === st).length;
+  const paid = settings.feriesPaid?.[year] || 0;
+  const chome = count('chome');
+  const target = settings.convention === 'hcr' && settings.seniority1y ? HCR_GUARANTEED : 0;
+  const obtained = Math.min(target, chome + recups + paid);
+  return {
+    year, list, target, paid, recups, chome,
+    worked: count('travaille'), repos: count('repos'),
+    obtained, due: Math.max(0, target - obtained),
+    mai1: list.find((h) => h.mai1),
   };
 }

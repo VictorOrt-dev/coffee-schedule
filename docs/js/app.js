@@ -1,7 +1,7 @@
 // Coffee & Schedule — application principale (Vanilla JS, modules ES).
 import {
   DAY_NAMES, DAY_SHORT, addDays, addMinutesHM, fmtClock, fmtDur, fromKey, isoWeek,
-  monthLabel, monthName, mondayOf, sameDay, shiftMinutes, toKey, weekRangeShort,
+  monthLabel, monthName, monthShort, mondayOf, sameDay, shiftMinutes, toKey, weekRangeShort,
 } from './time.js';
 import * as store from './store.js';
 import { SEASONS, SEASON_IDS, cornerArt, logoSVG, renderParticles, seasonOf } from './seasons.js';
@@ -12,7 +12,7 @@ import { buildICS } from './calendar.js';
 const { DAY_KINDS } = store;
 import { buildCardHTML, buildMonthText, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const icon = (name, cls = 'w-4 h-4') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -25,6 +25,7 @@ const KIND_CLS = {
   cp: 'bg-tone-100 text-tone-700 dark:bg-tone-900/50 dark:text-tone-200',
   ferie: 'bg-coffee-100 text-coffee-700 dark:bg-coffee-800 dark:text-coffee-100',
   maladie: 'bg-berry-100 text-berry-700 dark:bg-berry-700/40 dark:text-berry-100',
+  recup: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-100',
 };
 const validTemplates = () => settings().templates.filter((t) => t.start && t.end);
 
@@ -91,7 +92,7 @@ function renderWeekNav() {
 function absenceLabel(k) {
   const used = Object.entries(k).filter(([, n]) => n > 0).map(([id]) => id);
   if (used.length !== 1) return 'd’absence';
-  return { cp: 'de congé', ferie: 'de férié', maladie: 'd’arrêt' }[used[0]];
+  return { cp: 'de congé', ferie: 'de férié', maladie: 'd’arrêt', recup: 'de récup' }[used[0]];
 }
 
 function renderSummary() {
@@ -282,6 +283,52 @@ function barChart(items, ref, refLabel) {
     </div>`;
 }
 
+function feriesCardHTML(y) {
+  const fs = store.feriesStatus(y);
+  const rate = settings().hourlyRate;
+  const hcr = settings().convention === 'hcr';
+  const STATUS = {
+    travaille: ['Travaillé', KIND_CLS.cp], chome: ['Chômé', KIND_CLS.off], repos: ['Sur un repos', KIND_CLS.ferie],
+    avenir: ['À venir', 'bg-surface-2 text-muted'], nonsaisi: ['Non saisi', 'bg-surface-2 text-muted'],
+  };
+  const rows = fs.list.map((h) => `
+    <li class="flex items-center gap-2 py-1.5 border-b border-dashed border-line last:border-0">
+      <span class="w-14 flex-none text-xs font-extrabold text-muted">${h.date.getDate()} ${monthShort(h.date)}</span>
+      <span class="flex-1 min-w-0 truncate text-sm font-bold">${esc(h.name)}${h.mai1 ? ' <span class="text-muted font-semibold">(hors garantis)</span>' : ''}</span>
+      <span class="flex-none rounded-full px-2 h-6 inline-flex items-center text-[11px] font-extrabold ${STATUS[h.status][1]}">${STATUS[h.status][0]}</span>
+    </li>`).join('');
+  const dots = fs.target ? Array.from({ length: fs.target }, (_, k) =>
+    `<i class="inline-block w-3.5 h-3.5 rounded-full ${k < fs.obtained ? 'bg-tone-500 dark:bg-tone-400' : 'border-2 border-tone-300 dark:border-tone-700'}"></i>`).join('') : '';
+  const mai1 = fs.mai1?.status === 'travaille'
+    ? `<p class="mt-2 text-sm font-bold text-accent-ink">1er mai travaillé : il doit être payé double${rate && fs.mai1.worked ? ` (≈ ${eur((fs.mai1.worked / 60) * rate)} brut en plus)` : ''}.</p>` : '';
+  return `
+    <section class="card p-5 mt-3">
+      <h3 class="font-display text-lg font-semibold">🎉 Jours fériés ${y}</h3>
+      ${hcr && fs.target ? `
+        <div class="mt-2 flex items-center gap-3">
+          <div class="flex gap-1.5" aria-hidden="true">${dots}</div>
+          <p class="text-sm font-extrabold">${fs.obtained} / ${fs.target} garantis obtenus</p>
+        </div>
+        <p class="mt-1 text-xs font-semibold text-muted">${fs.chome} chômé${fs.chome > 1 ? 's' : ''} · ${fs.recups} récup${fs.recups > 1 ? 's' : ''} prise${fs.recups > 1 ? 's' : ''} · ${fs.paid} payé${fs.paid > 1 ? 's' : ''} sur la fiche de paie</p>
+        <p class="mt-2 text-sm font-semibold ${fs.due ? 'text-accent-ink' : 'text-sage-700 dark:text-sage-300'}">${fs.due
+          ? `Encore ${fs.due} férié${fs.due > 1 ? 's' : ''} garanti${fs.due > 1 ? 's' : ''} à obtenir avant le 31 décembre : un jour de récup ou une indemnité.`
+          : 'Tes 6 jours fériés garantis sont obtenus ✓'}</p>
+        <div class="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-surface-2 border border-line p-2 pl-3">
+          <span class="text-xs font-bold text-ink-soft">Fériés payés sur ta fiche de paie</span>
+          <span class="flex items-center gap-1">
+            <button type="button" class="icon-btn w-9 h-9 bg-surface border border-line" data-fpaid="-1" aria-label="Retirer un férié payé">−</button>
+            <b class="w-6 text-center">${fs.paid}</b>
+            <button type="button" class="icon-btn w-9 h-9 bg-surface border border-line" data-fpaid="1" aria-label="Ajouter un férié payé">+</button>
+          </span>
+        </div>`
+      : hcr ? '<p class="mt-2 text-sm font-semibold text-ink-soft">Avant 1 an d’ancienneté, seul le 1er mai est garanti en HCR.</p>'
+      : `<p class="mt-2 text-sm font-semibold text-ink-soft">${fs.worked} férié${fs.worked > 1 ? 's' : ''} travaillé${fs.worked > 1 ? 's' : ''} cette année.</p>`}
+      ${mai1}
+      <ul class="mt-3">${rows}</ul>
+      ${hcr ? '<p class="mt-2 text-[11px] font-semibold text-muted leading-snug">Convention HCR (avenant n° 6) : avec 1 an d’ancienneté, 10 fériés par an plus le 1er mai, dont 6 garantis. Un férié garanti travaillé ou tombé sur un repos se compense en repos ou en argent. Repère indicatif : vérifie avec ta fiche de paie.</p>' : ''}
+    </section>`;
+}
+
 function renderStats() {
   const y = yearCursor;
   const ys = store.yearStats(y);
@@ -362,6 +409,8 @@ function renderStats() {
       ${legend.replace('Contrat', 'Base mensuelle')}
       <p class="mt-2 text-[11px] font-semibold text-muted">Touche une barre pour voir le détail du mois.</p>
     </section>
+
+    ${feriesCardHTML(y)}
 
     <section class="card p-5 mt-3">
       <h3 class="font-display text-lg font-semibold">${DAY_KINDS.cp.emoji} Congés</h3>
@@ -483,6 +532,9 @@ function mascotState() {
     return { mood: 'star', text: st.absence ? 'Contrat rempli avec tes congés, bravo ✨' : `${fmtDur(st.contract)} pile, contrat rempli ! Bravo ✨` };
   }
   if (store.isWeekEmpty(week)) return { mood: 'happy', text: cur ? 'Ajoute tes horaires de la semaine ✍️' : 'Rien de prévu ici pour l’instant.' };
+  if (today && holidayName(new Date()) && (hasShift(today.planned) || hasShift(today.actual))) {
+    return { mood: 'happy', text: `Tu travailles un jour férié (${holidayName(new Date())}) : pense à ta récup ! 🔄` };
+  }
   if (today && hasShift(today.planned) && !hasShift(today.actual)) {
     return { mood: 'happy', text: `Aujourd'hui : ${fmtClock(today.planned.start)} – ${fmtClock(today.planned.end)}. Bon service ! ☕` };
   }
@@ -602,7 +654,7 @@ function dayHTML(i) {
           <span class="flex items-center gap-2 min-w-0">
             <span class="font-display text-[17px] font-semibold flex-none">${DAY_NAMES[i]}</span>
             ${isToday ? '<span class="flex-none rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-tone-100 text-tone-700 dark:bg-tone-900/50 dark:text-tone-200">Aujourd\'hui</span>' : ''}
-            ${hn ? `<span class="min-w-0 truncate rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${KIND_CLS.ferie}" title="${esc(hn)}">🎉 ${esc(hn)}</span>` : ''}
+            ${hn ? `<span class="min-w-0 truncate rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${KIND_CLS.ferie}" title="${esc(hn)}">🎉 ${esc(hn)}${!d.off && (hasShift(d.planned) || hasShift(d.actual)) ? ' · travaillé' : ''}</span>` : ''}
           </span>
           <span class="block text-[13px] font-semibold text-muted truncate" data-out="sub">${daySub(d, i)}</span>
         </span>
@@ -669,6 +721,26 @@ function shiftEditor(i, kind) {
     </div>`;
 }
 
+/** Rappel des règles quand un jour férié est travaillé. */
+function holidayHint(i) {
+  const date = addDays(monday, i);
+  const hn = holidayName(date);
+  const d = week.days[i];
+  if (!hn || d.off) return '';
+  const mai1 = date.getMonth() === 4 && date.getDate() === 1;
+  const rate = settings().hourlyRate;
+  const mins = shiftMinutes(d.actual) ?? shiftMinutes(d.planned) ?? 0;
+  let text;
+  if (mai1) {
+    text = `1er mai travaillé : il doit être payé double${rate && mins ? ` (≈ ${eur((mins / 60) * rate)} brut en plus)` : ''}.`;
+  } else if (settings().convention === 'hcr') {
+    text = 'Férié travaillé : en HCR, avec 1 an d’ancienneté, 6 fériés par an sont garantis. Travaillé, il doit être compensé par un jour de repos ou une indemnité. Le jour où tu prends ta récup, choisis « 🔄 Récup ».';
+  } else {
+    text = 'Férié travaillé : vérifie dans ta convention s’il est majoré ou récupéré.';
+  }
+  return `<p class="mt-3 rounded-2xl p-3 text-[13px] font-semibold leading-snug ${KIND_CLS.ferie}">🎉 ${esc(text)}</p>`;
+}
+
 function bodyHTML(i) {
   const d = week.days[i];
   const note = `
@@ -698,7 +770,7 @@ function bodyHTML(i) {
         <p class="text-sm font-semibold opacity-80">${esc(msg[1])}</p>
       </div>${note}`;
   }
-  return `${head}${shiftEditor(i, 'planned')}${shiftEditor(i, 'actual')}${note}`;
+  return `${head}${shiftEditor(i, 'planned')}${shiftEditor(i, 'actual')}${holidayHint(i)}${note}`;
 }
 
 /** Remplace entièrement la carte d'un jour (après une action structurelle). */
@@ -1066,6 +1138,8 @@ function openSettings() {
   $('#set-fx').checked = !!s.seasonFx;
   $('#set-mascot').checked = !!s.mascot;
   $('#set-rate').value = s.hourlyRate ?? '';
+  $('#set-convention').value = s.convention;
+  $('#set-seniority').checked = !!s.seniority1y;
   $('#set-leave').value = s.leaveBalance ?? '';
   $('#set-leave-date').value = s.leaveBalanceDate ?? '';
   renderTemplates();
@@ -1100,6 +1174,8 @@ function onSettingsInput() {
     seasonFx: $('#set-fx').checked,
     mascot: $('#set-mascot').checked,
     hourlyRate: $('#set-rate').value.replace(',', '.'),
+    convention: $('#set-convention').value,
+    seniority1y: $('#set-seniority').checked,
     leaveBalance: $('#set-leave').value.replace(',', '.'),
     leaveBalanceDate: $('#set-leave-date').value || null,
   });
@@ -1237,6 +1313,13 @@ function bind() {
   $$('[data-tab]', dlgMonth).forEach((b) => b.addEventListener('click', () => { bilanTab = b.dataset.tab; renderBilan(); }));
   dlgMonth.addEventListener('click', (e) => {
     if (e.target.closest('[data-open-settings]')) { closeDialog(dlgMonth); openSettings(); return; }
+    const fp = e.target.closest('[data-fpaid]');
+    if (fp) {
+      const cur = settings().feriesPaid[yearCursor] || 0;
+      store.updateSettings({ feriesPaid: { ...settings().feriesPaid, [yearCursor]: Math.max(0, Math.min(11, cur + Number(fp.dataset.fpaid))) } });
+      renderStats();
+      return;
+    }
     const mo = e.target.closest('[data-month]');
     if (mo) { monthCursor = { y: yearCursor, m: Number(mo.dataset.month) }; bilanTab = 'month'; renderBilan(); }
   });
@@ -1261,7 +1344,7 @@ function bind() {
   $('#set-leave').addEventListener('input', () => {
     if ($('#set-leave').value && !$('#set-leave-date').value) { $('#set-leave-date').value = toKey(new Date()); onSettingsInput(); }
   });
-  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration', '#set-fx', '#set-mascot', '#set-rate', '#set-leave', '#set-leave-date']) {
+  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration', '#set-fx', '#set-mascot', '#set-rate', '#set-leave', '#set-leave-date', '#set-convention', '#set-seniority']) {
     $(id).addEventListener('input', onSettingsInput);
     $(id).addEventListener('change', onSettingsInput);
   }

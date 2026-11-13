@@ -34,7 +34,7 @@ export function buildICS(days, { name = '' } = {}) {
     if (!day) continue;
     const uid = `${toKey(date)}-${day.off ? day.kind : 'work'}@coffee-schedule`;
     if (day.off) {
-      if (day.kind !== 'cp' && day.kind !== 'ferie') continue;
+      if (!['cp', 'ferie', 'recup'].includes(day.kind)) continue;
       const k = DAY_KINDS[day.kind];
       const label = day.kind === 'ferie' && holidayName(date) ? `${k.label} · ${holidayName(date)}` : k.label;
       events.push([
