@@ -12,10 +12,26 @@ export const DEFAULT_SETTINGS = {
   season: 'auto',   // 'auto' | 'winter' | 'spring' | 'summer' | 'autumn'
   seasonFx: true,   // particules d'arrière-plan
   mascot: true,     // Goombouille sur l'écran d'accueil
+  hourlyRate: null,        // taux horaire brut (€) pour les estimations
+  leaveBalance: null,      // solde de congés payés (jours) lu sur la fiche de paie…
+  leaveBalanceDate: null,  // …à cette date ("YYYY-MM-DD")
+  templates: [             // horaires types (boutons rapides)
+    { id: 't1', name: 'Ouverture', start: '06:30', end: '14:30', brk: 30 },
+    { id: 't2', name: 'Journée', start: '09:00', end: '17:00', brk: 30 },
+    { id: 't3', name: 'Fermeture', start: '12:00', end: '20:00', brk: 30 },
+  ],
+};
+
+/** Types de journée non travaillée. « paid » : absence comptée dans le contrat (pas dans les heures supp.). */
+export const DAY_KINDS = {
+  off: { label: 'Repos', short: 'Off', emoji: '🍃', paid: false },
+  cp: { label: 'Congé payé', short: 'Congé', emoji: '🌴', paid: true },
+  ferie: { label: 'Férié', short: 'Férié', emoji: '🎉', paid: true },
+  maladie: { label: 'Maladie', short: 'Maladie', emoji: '🤒', paid: true },
 };
 
 export const blankShift = () => ({ start: '', end: '', brk: null });
-export const blankDay = () => ({ off: false, planned: blankShift(), actual: blankShift(), note: '' });
+export const blankDay = () => ({ off: false, kind: 'off', planned: blankShift(), actual: blankShift(), note: '' });
 export const blankWeek = () => ({ days: Array.from({ length: 7 }, blankDay) });
 
 let state = { schema: SCHEMA, settings: { ...DEFAULT_SETTINGS }, weeks: {} };
@@ -25,6 +41,7 @@ function normalizeDay(d) {
   if (!d || typeof d !== 'object') return base;
   return {
     off: !!d.off,
+    kind: DAY_KINDS[d.kind] ? d.kind : 'off',
     planned: { ...base.planned, ...(d.planned || {}) },
     actual: { ...base.actual, ...(d.actual || {}) },
     note: typeof d.note === 'string' ? d.note : '',
@@ -40,6 +57,21 @@ function normalize(raw) {
   if (!['auto', 'winter', 'spring', 'summer', 'autumn'].includes(out.settings.season)) out.settings.season = 'auto';
   out.settings.seasonFx = out.settings.seasonFx !== false;
   out.settings.mascot = out.settings.mascot !== false;
+  const num = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+  out.settings.hourlyRate = num(out.settings.hourlyRate);
+  out.settings.leaveBalance = num(out.settings.leaveBalance);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(out.settings.leaveBalanceDate || '')) out.settings.leaveBalanceDate = null;
+  const hm = (v) => (/^\d{2}:\d{2}$/.test(v || '') ? v : '');
+  out.settings.templates = (Array.isArray(out.settings.templates) ? out.settings.templates : DEFAULT_SETTINGS.templates)
+    .slice(0, 6)
+    .filter((t) => t && typeof t === 'object')
+    .map((t, i) => ({
+      id: String(t.id || `t${Date.now()}${i}`),
+      name: String(t.name ?? '').slice(0, 16),
+      start: hm(t.start),
+      end: hm(t.end),
+      brk: clampNum(t.brk, 0, 240, 30),
+    }));
   for (const [k, w] of Object.entries(raw.weeks || {})) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !w || !Array.isArray(w.days)) continue;
     out.weeks[k] = { days: Array.from({ length: 7 }, (_, i) => normalizeDay(w.days[i])) };
@@ -157,15 +189,20 @@ export function dayStats(day) {
 export function weekStats(week, settings = state.settings) {
   const contract = Math.round(settings.contractHours * 60);
   let planned = 0, actual = 0, actualDays = 0, plannedDays = 0, offDays = 0, diffSum = 0, diffDays = 0;
+  const kinds = { cp: 0, ferie: 0, maladie: 0 };
   const days = week.days.map((d) => {
     const s = dayStats(d);
-    if (s.off) offDays++;
+    if (s.off) { offDays++; if (DAY_KINDS[d.kind]?.paid) kinds[d.kind]++; }
     if (s.planned) { planned += s.planned; plannedDays++; }
     if (s.actual != null) { actual += s.actual; actualDays++; }
     if (s.diff != null) { diffSum += s.diff; diffDays++; }
     return s;
   });
   const overtime = actual - contract;
+  // Absences payées (congé, férié, maladie) : créditées de contrat/5 par jour.
+  // Elles complètent le contrat mais ne créent jamais d'heures supp. (pas du travail effectif).
+  const absenceDays = kinds.cp + kinds.ferie + kinds.maladie;
+  const absence = absenceDays * Math.round(contract / 5);
   const plannedOvertime = planned - contract;
   const ot = Math.max(0, overtime);
   return {
@@ -180,6 +217,9 @@ export function weekStats(week, settings = state.settings) {
     plannedOvertime,
     diffVsPlanned: diffDays ? diffSum : null, // écart réel/prévu sur les jours comparables
     hasActual: actualDays > 0,
+    kinds,
+    absenceDays,
+    absence,
     at25: Math.min(ot, 8 * 60),
     at50: Math.max(0, ot - 8 * 60),
   };
@@ -197,6 +237,7 @@ export function monthStats(year, month, settings = state.settings) {
   const last = new Date(year, month + 1, 0);
   let planned = 0, actual = 0, actualDays = 0, workedDays = 0, offDays = 0;
   let overtime = 0, plannedOvertime = 0, at25 = 0, at50 = 0;
+  const kinds = { cp: 0, ferie: 0, maladie: 0 };
   const weeks = [];
 
   for (let monday = mondayOf(first); monday <= last; monday = addDays(monday, 7)) {
@@ -212,7 +253,7 @@ export function monthStats(year, month, settings = state.settings) {
       inDays++;
       if (!ws) continue;
       const s = ws.days[i];
-      if (s.off) { offDays++; continue; }
+      if (s.off) { offDays++; const k = week.days[i].kind; if (k in kinds) kinds[k]++; continue; }
       if (s.planned) inPlanned += s.planned;
       if (s.actual != null) { inActual += s.actual; inActualDays++; }
       if (s.planned || s.actual) workedDays++;
@@ -238,7 +279,75 @@ export function monthStats(year, month, settings = state.settings) {
     year, month, weeks,
     planned, actual, actualDays, workedDays, offDays,
     hasActual: actualDays > 0,
-    overtime, plannedOvertime, at25, at50,
+    overtime, plannedOvertime, at25, at50, kinds,
     base: Math.round((settings.contractHours * 60 * 52) / 12),
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Argent, congés, année                                               */
+/* ------------------------------------------------------------------ */
+
+/** Valeur brute des heures supp. (majorations légales par défaut : +25 % puis +50 %). */
+export function overtimeEuros(at25, at50, rate) {
+  if (!rate) return 0;
+  return rate * ((at25 / 60) * 1.25 + (at50 / 60) * 1.5);
+}
+
+/** Itère tous les jours enregistrés : cb(date, day). */
+function eachDay(cb) {
+  for (const [key, w] of Object.entries(state.weeks)) {
+    const [y, m, d] = key.split('-').map(Number);
+    const monday = new Date(y, m - 1, d);
+    w.days.forEach((day, i) => cb(addDays(monday, i), day));
+  }
+}
+
+/** Solde de congés : solde saisi − congés posés après la date du solde. null si non renseigné. */
+export function leaveStatus(settings = state.settings, today = new Date()) {
+  if (settings.leaveBalance == null) return null;
+  const from = settings.leaveBalanceDate || '0000-00-00';
+  const todayKey = toKey(today);
+  let taken = 0, upcoming = 0;
+  eachDay((date, day) => {
+    if (!day.off || day.kind !== 'cp') return;
+    const k = toKey(date);
+    if (k <= from) return;
+    if (k <= todayKey) taken++; else upcoming++;
+  });
+  return { balance: settings.leaveBalance, taken, upcoming, remaining: settings.leaveBalance - taken - upcoming };
+}
+
+/** Statistiques d'une année civile. */
+export function yearStats(year, settings = state.settings) {
+  const months = Array.from({ length: 12 }, () => ({ planned: 0, actual: 0, actualDays: 0 }));
+  let actual = 0, planned = 0, workedDays = 0;
+  const kinds = { cp: 0, ferie: 0, maladie: 0, off: 0 };
+  eachDay((date, day) => {
+    if (date.getFullYear() !== year) return;
+    if (day.off) { kinds[day.kind] = (kinds[day.kind] || 0) + 1; return; }
+    const p = shiftMinutes(day.planned), a = shiftMinutes(day.actual);
+    const mo = months[date.getMonth()];
+    if (p) { planned += p; mo.planned += p; }
+    if (a != null) { actual += a; mo.actual += a; mo.actualDays++; }
+    if (p || a) workedDays++;
+  });
+  // Heures supp. : semaine par semaine, rattachées à l'année de leur dimanche
+  let overtime = 0, at25 = 0, at50 = 0, weeksWithActual = 0, weeklyActual = 0;
+  for (const [key, w] of Object.entries(state.weeks)) {
+    const [y, m, d] = key.split('-').map(Number);
+    if (addDays(new Date(y, m - 1, d), 6).getFullYear() !== year) continue;
+    const ws = weekStats(w, settings);
+    if (!ws.hasActual) continue;
+    weeksWithActual++;
+    weeklyActual += ws.actual;
+    overtime += Math.max(0, ws.overtime);
+    at25 += ws.at25;
+    at50 += ws.at50;
+  }
+  return {
+    year, months, actual, planned, workedDays, kinds,
+    overtime, at25, at50, weeksWithActual,
+    avgWeek: weeksWithActual ? Math.round(weeklyActual / weeksWithActual) : 0,
   };
 }

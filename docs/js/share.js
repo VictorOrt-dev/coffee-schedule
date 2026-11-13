@@ -2,6 +2,8 @@
 import { DAY_NAMES, DAY_SHORT, addDays, fmtClock, fmtDur, isoWeek, monthLabel, weekRangeLong, weekRangeShort } from './time.js';
 import { weekStats } from './store.js';
 import { SEASONS, cardDecor } from './seasons.js';
+import { DAY_KINDS } from './store.js';
+import { holidayName } from './holidays.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const range = (s) => `${fmtClock(s.start)} – ${fmtClock(s.end)}`;
@@ -41,8 +43,8 @@ export function buildCardHTML(week, monday, settings, mode = 'planning', season 
 
     if (d.off) {
       cls = 'is-off';
-      hours = 'Repos';
-      sub = note || 'Jour off';
+      hours = DAY_KINDS[d.kind].label;
+      sub = note || (d.kind === 'ferie' ? holidayName(date) || '' : d.kind === 'off' ? 'Jour off' : '');
     } else if (isBilan && hasShift(d.actual)) {
       hours = range(d.actual);
       dur = fmtDur(ds.actual);
@@ -130,7 +132,7 @@ export function buildText(week, monday, settings, mode = 'planning', season = 'a
     const date = addDays(monday, i);
     const label = `${DAY_NAMES[i]} ${date.getDate()}`;
     let v = '—';
-    if (d.off) v = `Repos ${SEASONS[season].emoji}`;
+    if (d.off) v = d.kind === 'off' ? `Repos ${SEASONS[season].emoji}` : `${DAY_KINDS[d.kind].label} ${DAY_KINDS[d.kind].emoji}`;
     else if (isBilan && hasShift(d.actual)) v = `${range(d.actual)} (${fmtDur(st.days[i].actual)})`;
     else if (hasShift(d.planned)) v = `${range(d.planned)} (${fmtDur(st.days[i].planned)})${isBilan ? ' prévu' : ''}`;
     lines.push(`• ${label} : ${v}${d.note?.trim() ? ' – ' + d.note.trim() : ''}`);

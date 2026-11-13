@@ -6,14 +6,27 @@ import {
 import * as store from './store.js';
 import { SEASONS, SEASON_IDS, cornerArt, logoSVG, renderParticles, seasonOf } from './seasons.js';
 import { PHRASES, goombouilleSVG } from './mascot.js';
+import { holidayName } from './holidays.js';
+import { buildICS } from './calendar.js';
+
+const { DAY_KINDS } = store;
 import { buildCardHTML, buildMonthText, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const icon = (name, cls = 'w-4 h-4') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const hasShift = (s) => !!(s.start && s.end);
+const eur = (v) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: v >= 1000 ? 0 : 2 }).format(v);
+const perDay = () => Math.round((settings().contractHours * 60) / 5);
+const KIND_CLS = {
+  off: 'bg-sage-100 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100',
+  cp: 'bg-tone-100 text-tone-700 dark:bg-tone-900/50 dark:text-tone-200',
+  ferie: 'bg-coffee-100 text-coffee-700 dark:bg-coffee-800 dark:text-coffee-100',
+  maladie: 'bg-berry-100 text-berry-700 dark:bg-berry-700/40 dark:text-berry-100',
+};
+const validTemplates = () => settings().templates.filter((t) => t.start && t.end);
 
 /* ------------------------------------------------------------------ */
 /* État                                                                */
@@ -75,48 +88,60 @@ function renderWeekNav() {
   $('#back-today').classList.toggle('hidden', delta === 0);
 }
 
+function absenceLabel(k) {
+  const used = Object.entries(k).filter(([, n]) => n > 0).map(([id]) => id);
+  if (used.length !== 1) return 'd’absence';
+  return { cp: 'de congé', ferie: 'de férié', maladie: 'd’arrêt' }[used[0]];
+}
+
 function renderSummary() {
   const st = store.weekStats(week);
+  const { contract, absence } = st;
   const useActual = st.hasActual;
   const value = useActual ? st.actual : st.planned;
-  const diff = value - st.contract;
-  const { contract } = st;
+  const credited = value + absence;
+  const over = Math.max(0, value - contract);
+  const missing = Math.max(0, contract - credited);
+  const absTxt = absence ? ` + ${fmtDur(absence)} ${absenceLabel(st.kinds)}` : '';
+  const rate = settings().hourlyRate;
 
   // Badge
   let badge;
-  if (value === 0) {
+  if (value === 0 && absence === 0) {
     badge = `<span class="chip pointer-events-none">${icon('cup')} À remplir</span>`;
-  } else if (diff > 0) {
-    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold text-white bg-gradient-to-br from-tone-400 to-tone-600 shadow-soft">${icon('flame')} ${fmtDur(diff, { sign: true })} supp.</span>`;
-  } else if (diff === 0) {
-    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold bg-sage-100 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100">${icon('check')} Pile ${fmtDur(contract)}</span>`;
+  } else if (over > 0) {
+    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold text-white bg-gradient-to-br from-tone-400 to-tone-600 shadow-soft">${icon('flame')} ${fmtDur(over, { sign: true })} supp.</span>`;
+  } else if (missing === 0) {
+    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold bg-sage-100 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100">${icon('check')} ${absence ? 'Contrat rempli' : `Pile ${fmtDur(contract)}`}</span>`;
   } else {
-    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold bg-surface-2 text-ink-soft border border-line">${useActual ? 'Encore' : '−'} ${fmtDur(-diff)}</span>`;
+    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold bg-surface-2 text-ink-soft border border-line">${useActual ? 'Encore' : '−'} ${fmtDur(missing)}</span>`;
   }
 
-  // Barre de progression
-  const scale = Math.max(contract * 1.25, st.actual, st.planned, 1);
+  // Barre : travail (jusqu'au contrat) + heures supp. + absences payées (hachuré vert)
+  const scale = Math.max(contract * 1.25, credited, st.planned + absence, 1);
   const pct = (m) => `${Math.min(100, (m / scale) * 100).toFixed(2)}%`;
   const base = Math.min(value, contract);
-  const over = Math.max(0, value - contract);
   const plannedMarker = useActual && st.planned > 0
     ? `<span class="absolute -top-[18px] -translate-x-1/2 text-[10px] font-extrabold text-muted" style="left:${pct(st.planned)}">prévu ▾</span>`
     : '';
 
   // Phrase clé : "39h30 effectuées = +4h30 supp."
   let sentence;
-  if (value === 0) sentence = 'Commence par saisir tes horaires prévus ci-dessous.';
-  else if (useActual) sentence = diff > 0
-    ? `<b>${fmtDur(st.actual)} effectuées = <span class="text-accent-ink">${fmtDur(diff, { sign: true })} supp.</span></b>`
-    : diff === 0 ? `<b>${fmtDur(st.actual)} effectuées</b> — contrat rempli, bravo !`
-    : `<b>${fmtDur(st.actual)} effectuées</b> sur ${fmtDur(contract)} · encore ${fmtDur(-diff)}`;
-  else sentence = diff > 0
-    ? `<b>${fmtDur(st.planned)} prévues = <span class="text-accent-ink">${fmtDur(diff, { sign: true })} supp.</span> à venir</b>`
-    : `<b>${fmtDur(st.planned)} prévues</b> sur ${fmtDur(contract)}`;
+  if (value === 0 && absence === 0) sentence = 'Commence par saisir tes horaires prévus ci-dessous.';
+  else if (useActual) sentence = over > 0
+    ? `<b>${fmtDur(st.actual)} effectuées = <span class="text-accent-ink">${fmtDur(over, { sign: true })} supp.</span></b>${absence ? ` <span class="text-muted">(et ${absTxt.slice(3)})</span>` : ''}`
+    : missing === 0 ? `<b>${fmtDur(st.actual)} effectuées${absTxt}</b> — contrat rempli, bravo !`
+    : `<b>${fmtDur(st.actual)} effectuées${absTxt}</b> · encore ${fmtDur(missing)}`;
+  else sentence = over > 0
+    ? `<b>${fmtDur(st.planned)} prévues = <span class="text-accent-ink">${fmtDur(over, { sign: true })} supp.</span> à venir</b>${absence ? ` <span class="text-muted">(et ${absTxt.slice(3)})</span>` : ''}`
+    : `<b>${value ? `${fmtDur(st.planned)} prévues` : 'Aucune heure prévue'}${absTxt}</b> sur ${fmtDur(contract)}`;
 
-  const maj = settings().showMajoration && useActual && st.overtime > 0
-    ? `<p class="mt-1 text-xs font-bold text-muted">dont ${fmtDur(st.at25)} à +25 %${st.at50 ? ` et ${fmtDur(st.at50)} à +50 %` : ''} <span class="opacity-70">(indicatif)</span></p>`
-    : '';
+  const details = [];
+  if (useActual && st.overtime > 0) {
+    if (settings().showMajoration) details.push(`dont ${fmtDur(st.at25)} à +25 %${st.at50 ? ` et ${fmtDur(st.at50)} à +50 %` : ''}`);
+    if (rate) details.push(`≈ ${eur(store.overtimeEuros(st.at25, st.at50, rate))} brut`);
+  }
+  const maj = details.length ? `<p class="mt-1 text-xs font-bold text-muted">${details.join(' · ')} <span class="opacity-70">(indicatif)</span></p>` : '';
 
   const mini = (label, val, cls = '') => `
     <div class="rounded-2xl bg-surface-2 border border-line/70 px-2 py-2">
@@ -136,10 +161,11 @@ function renderSummary() {
       <div class="pt-1">${badge}</div>
     </div>
 
-    <div class="relative mt-6 mb-6" role="img" aria-label="${fmtDur(value)} sur un contrat de ${fmtDur(contract)}">
+    <div class="relative mt-6 mb-6" role="img" aria-label="${fmtDur(value)}${absence ? ` et ${fmtDur(absence)} d’absences payées` : ''} sur un contrat de ${fmtDur(contract)}">
       <div class="h-4 rounded-full bg-surface-2 border border-line overflow-hidden relative">
-        <div class="absolute inset-y-0 left-0 ${over ? '' : 'rounded-r-full'} ${useActual ? 'bg-coffee-700 dark:bg-coffee-300' : 'bg-coffee-400'} transition-[width] duration-500" style="width:${pct(base)}"></div>
-        <div class="absolute inset-y-0 progress-overtime rounded-r-full transition-[width] duration-500" style="left:${pct(contract)};width:${over ? `calc(${pct(over)})` : '0'}"></div>
+        <div class="absolute inset-y-0 left-0 ${over || absence ? '' : 'rounded-r-full'} ${useActual ? 'bg-coffee-700 dark:bg-coffee-300' : 'bg-coffee-400'} transition-[width] duration-500" style="width:${pct(base)}"></div>
+        <div class="absolute inset-y-0 progress-overtime ${absence ? '' : 'rounded-r-full'} transition-[width] duration-500" style="left:${pct(contract)};width:${over ? pct(over) : '0'}"></div>
+        <div class="absolute inset-y-0 progress-absence rounded-r-full transition-[width] duration-500" style="left:${pct(value)};width:${absence ? pct(absence) : '0'}"></div>
       </div>
       <span class="absolute -top-1.5 -bottom-1.5 w-[3px] -ml-[1.5px] rounded-full bg-ink/80" style="left:${pct(contract)}"></span>
       <span class="absolute top-full mt-1 -translate-x-1/2 text-[11px] font-extrabold text-ink-soft" style="left:${pct(contract)}">${fmtDur(contract)}</span>
@@ -187,17 +213,161 @@ function monthTeaserHTML() {
 /* ------------------------------------------------------------------ */
 const dlgMonth = $('#dlg-month');
 let monthCursor = weekMonth();
+let yearCursor = new Date().getFullYear();
+let bilanTab = 'month';
 
-function openMonth(cursor = weekMonth()) {
+function openMonth(cursor = weekMonth(), tab = 'month') {
   monthCursor = cursor;
-  renderMonth();
+  yearCursor = cursor.y;
+  bilanTab = tab;
+  renderBilan();
   openDialog(dlgMonth);
 }
 
 function shiftMonth(delta) {
-  const d = new Date(monthCursor.y, monthCursor.m + delta, 1);
-  monthCursor = { y: d.getFullYear(), m: d.getMonth() };
-  renderMonth();
+  if (bilanTab === 'stats') {
+    yearCursor += delta;
+  } else {
+    const d = new Date(monthCursor.y, monthCursor.m + delta, 1);
+    monthCursor = { y: d.getFullYear(), m: d.getMonth() };
+  }
+  renderBilan();
+}
+
+function renderBilan() {
+  $$('[data-tab]', dlgMonth).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tab === bilanTab)));
+  $('#month-actions').classList.toggle('hidden', bilanTab !== 'month');
+  $('#prev-month').setAttribute('aria-label', bilanTab === 'month' ? 'Mois précédent' : 'Année précédente');
+  $('#next-month').setAttribute('aria-label', bilanTab === 'month' ? 'Mois suivant' : 'Année suivante');
+  if (bilanTab === 'month') renderMonth(); else renderStats();
+}
+
+function salaryHTML(ms) {
+  const rate = settings().hourlyRate;
+  if (!rate) {
+    return `<button type="button" data-open-settings class="mt-3 w-full text-left text-xs font-bold text-accent-ink underline underline-offset-2">Ajoute ton taux horaire dans les réglages pour estimer ton salaire →</button>`;
+  }
+  const base = (ms.base / 60) * rate;
+  const supp = store.overtimeEuros(ms.at25, ms.at50, rate);
+  return `
+    <div class="mt-3 rounded-2xl border border-tone-200/80 bg-tone-50/80 dark:border-tone-900/60 dark:bg-tone-900/20 p-3">
+      <p class="text-[11px] font-extrabold uppercase tracking-wider text-accent-ink">Salaire brut estimé</p>
+      <p class="font-display text-2xl font-semibold">≈ ${eur(base + supp)}</p>
+      <p class="text-xs font-semibold text-muted leading-snug">${fmtDur(ms.base)} × ${eur(rate)} = ${eur(base)}${supp ? ` + ${eur(supp)} d’heures supp. majorées` : ''} · hors primes, absences non payées et cotisations</p>
+    </div>`;
+}
+
+/** Petit graphique en barres (une série + état « prévu » hachuré, ligne de référence). */
+function barChart(items, ref, refLabel) {
+  const max = Math.max(ref, ...items.map((it) => it.value), 1) * 1.18;
+  const h = (v) => `${((v / max) * 100).toFixed(2)}%`;
+  const peak = items.reduce((b, it, i) => (it.value > (items[b]?.value ?? -1) ? i : b), 0);
+  const bars = items.map((it, i) => {
+    const showLabel = it.value > 0 && (it.current || i === peak);
+    return `
+      <button type="button" class="relative flex-1 h-full flex flex-col justify-end items-center" ${it.attr} aria-label="${it.aria}">
+        ${showLabel ? `<span class="absolute text-[10px] font-extrabold text-ink-soft whitespace-nowrap" style="bottom:calc(${h(it.value)} + 3px)">${fmtDur(it.value)}</span>` : ''}
+        <span class="block w-full max-w-[26px] rounded-t-[4px] ${it.value ? (it.planned ? 'bar-planned' : 'bg-tone-500 dark:bg-tone-400') : 'bg-line'} ${it.current ? 'ring-2 ring-offset-2 ring-offset-surface ring-tone-300 dark:ring-tone-700' : ''}"
+              style="height:${it.value ? h(it.value) : '3px'}"></span>
+      </button>`;
+  }).join('');
+  return `
+    <div class="relative h-36 mt-5">
+      <div class="absolute inset-x-0 border-t-2 border-dashed border-ink/30" style="bottom:${h(ref)}"></div>
+      <span class="absolute right-0 translate-y-1/2 text-[10px] font-extrabold text-muted bg-surface pl-1" style="bottom:${h(ref)}">${refLabel}</span>
+      <div class="absolute inset-y-0 left-0 right-10 flex items-end gap-[2px]">${bars}</div>
+    </div>
+    <div class="flex gap-[2px] mt-1.5 border-t border-line pt-1.5 pr-10">
+      ${items.map((it) => `<span class="flex-1 text-center text-[10px] font-extrabold ${it.current ? 'text-ink' : 'text-muted'}">${it.label}</span>`).join('')}
+    </div>`;
+}
+
+function renderStats() {
+  const y = yearCursor;
+  const ys = store.yearStats(y);
+  const lv = store.leaveStatus();
+  const rate = settings().hourlyRate;
+  const contract = Math.round(settings().contractHours * 60);
+  $('#month-label').textContent = `Année ${y}`;
+
+  // 8 dernières semaines (jusqu'à la semaine en cours, ou la fin de l'année affichée)
+  const nowMonday = mondayOf(new Date());
+  const endMonday = y === new Date().getFullYear() ? nowMonday : mondayOf(new Date(y, 11, 28));
+  const weekItems = Array.from({ length: 8 }, (_, k) => {
+    const mon = addDays(endMonday, -7 * (7 - k));
+    const w = store.peekWeek(toKey(mon));
+    const ws = w ? store.weekStats(w) : null;
+    const planned = !!ws && !ws.hasActual && ws.planned > 0;
+    const value = ws ? (ws.hasActual ? ws.actual : ws.planned) : 0;
+    return {
+      value, planned, current: toKey(mon) === toKey(nowMonday), label: `S${isoWeek(mon)}`,
+      attr: `data-week="${toKey(mon)}"`,
+      aria: `Semaine ${isoWeek(mon)} : ${value ? `${fmtDur(value)} ${planned ? 'prévues' : 'effectuées'}` : 'rien de saisi'}`,
+    };
+  });
+  const monthItems = ys.months.map((mo, i) => {
+    const planned = !mo.actualDays && mo.planned > 0;
+    const value = mo.actualDays ? mo.actual : mo.planned;
+    const now = new Date();
+    return {
+      value, planned, current: y === now.getFullYear() && i === now.getMonth(), label: 'JFMAMJJASOND'[i],
+      attr: `data-month="${i}"`,
+      aria: `${cap(monthName(i))} : ${value ? `${fmtDur(value)} ${planned ? 'prévues' : 'effectuées'}` : 'rien de saisi'}`,
+    };
+  });
+  const base = Math.round((settings().contractHours * 60 * 52) / 12);
+  const mini = (label, val, cls = '') => `
+    <div class="rounded-2xl bg-surface-2 border border-line/70 px-2 py-2">
+      <p class="text-[10px] font-extrabold uppercase tracking-wider text-muted">${label}</p>
+      <p class="font-display text-[17px] font-semibold ${cls}">${val}</p>
+    </div>`;
+  const legend = `
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 text-[11px] font-bold text-muted">
+      <span class="inline-flex items-center gap-1.5"><i class="inline-block w-3 h-3 rounded-[3px] bg-tone-500 dark:bg-tone-400"></i>Effectué</span>
+      <span class="inline-flex items-center gap-1.5"><i class="inline-block w-3 h-3 rounded-[3px] bar-planned"></i>Prévu (pas encore saisi)</span>
+      <span class="inline-flex items-center gap-1.5"><i class="inline-block w-4 border-t-2 border-dashed border-ink/40"></i>Contrat</span>
+    </div>`;
+
+  const leave = lv
+    ? `<p class="font-display text-[34px] leading-tight font-semibold">${String(lv.remaining).replace('.', ',')} <span class="font-sans text-base font-bold text-muted">jour${Math.abs(lv.remaining) > 1 ? 's' : ''} restant${Math.abs(lv.remaining) > 1 ? 's' : ''}</span></p>
+       <p class="text-xs font-semibold text-muted">Solde de ${String(lv.balance).replace('.', ',')} j au ${settings().leaveBalanceDate ? fromKey(settings().leaveBalanceDate).toLocaleDateString('fr-FR') : '—'} · ${lv.taken} pris depuis · ${lv.upcoming} posé${lv.upcoming > 1 ? 's' : ''} à venir</p>`
+    : `<p class="text-sm font-semibold text-ink-soft">Indique ton solde de congés (sur ta fiche de paie) pour savoir combien de jours tu peux encore poser.</p>
+       <button type="button" data-open-settings class="btn-soft w-full mt-3">${icon('settings', 'w-5 h-5')} Renseigner mon solde</button>`;
+
+  $('#month-body').innerHTML = `
+    <section class="card p-5 mt-3">
+      <p class="text-[11px] font-extrabold uppercase tracking-wider text-muted">Effectué en ${y}</p>
+      <p class="font-display text-[44px] leading-[1.05] font-semibold tracking-tight">${fmtDur(ys.actual)}</p>
+      <div class="grid grid-cols-3 gap-2 mt-4 text-center">
+        ${mini('Heures supp.', ys.overtime ? fmtDur(ys.overtime, { sign: true }) : '0h', ys.overtime ? 'text-accent-ink' : '')}
+        ${mini('Moy. / sem.', ys.avgWeek ? fmtDur(ys.avgWeek) : '—')}
+        ${mini('Jours trav.', String(ys.workedDays))}
+      </div>
+      ${ys.overtime && (rate || settings().showMajoration) ? `<p class="mt-2 text-xs font-bold text-muted">${[
+        settings().showMajoration && `dont ${fmtDur(ys.at25)} à +25 %${ys.at50 ? ` et ${fmtDur(ys.at50)} à +50 %` : ''}`,
+        rate && `≈ ${eur(store.overtimeEuros(ys.at25, ys.at50, rate))} brut d’heures supp.`].filter(Boolean).join(' · ')} <span class="opacity-70">(indicatif)</span></p>` : ''}
+      <p class="mt-2 text-xs font-semibold text-muted">Moyenne calculée sur ${ys.weeksWithActual} semaine${ys.weeksWithActual > 1 ? 's' : ''} saisie${ys.weeksWithActual > 1 ? 's' : ''}.</p>
+    </section>
+
+    <section class="card p-5 mt-3">
+      <h3 class="font-display text-lg font-semibold">8 dernières semaines</h3>
+      ${barChart(weekItems, contract, fmtDur(contract))}
+      ${legend}
+      <p class="mt-2 text-[11px] font-semibold text-muted">Touche une barre pour ouvrir la semaine.</p>
+    </section>
+
+    <section class="card p-5 mt-3">
+      <h3 class="font-display text-lg font-semibold">Heures par mois · ${y}</h3>
+      ${barChart(monthItems, base, fmtDur(base))}
+      ${legend.replace('Contrat', 'Base mensuelle')}
+      <p class="mt-2 text-[11px] font-semibold text-muted">Touche une barre pour voir le détail du mois.</p>
+    </section>
+
+    <section class="card p-5 mt-3">
+      <h3 class="font-display text-lg font-semibold">${DAY_KINDS.cp.emoji} Congés</h3>
+      <div class="mt-2">${leave}</div>
+      <p class="mt-3 text-sm font-semibold text-ink-soft">En ${y} : ${ys.kinds.cp || 0} j de congé · ${ys.kinds.ferie || 0} férié${(ys.kinds.ferie || 0) > 1 ? 's' : ''} chômé${(ys.kinds.ferie || 0) > 1 ? 's' : ''} · ${ys.kinds.maladie || 0} j maladie</p>
+    </section>`;
 }
 
 function renderMonth() {
@@ -265,7 +435,9 @@ function renderMonth() {
         ${mini('Supp.', ms.overtime > 0 ? fmtDur(ms.overtime, { sign: true }) : '0h', ms.overtime > 0 ? 'text-accent-ink' : '')}
       </div>
       ${maj}
-      <p class="mt-3 text-sm font-semibold text-ink-soft">${ms.workedDays} jour${ms.workedDays > 1 ? 's' : ''} travaillé${ms.workedDays > 1 ? 's' : ''} · ${ms.offDays} off</p>
+      <p class="mt-3 text-sm font-semibold text-ink-soft">${ms.workedDays} jour${ms.workedDays > 1 ? 's' : ''} travaillé${ms.workedDays > 1 ? 's' : ''} · ${ms.offDays} non travaillé${ms.offDays > 1 ? 's' : ''}${
+        ms.kinds.cp || ms.kinds.ferie || ms.kinds.maladie ? ` <span class="text-muted">(${[ms.kinds.cp && `${ms.kinds.cp} j de congé`, ms.kinds.ferie && `${ms.kinds.ferie} férié${ms.kinds.ferie > 1 ? 's' : ''}`, ms.kinds.maladie && `${ms.kinds.maladie} j maladie`].filter(Boolean).join(', ')})</span>` : ''}</p>
+      ${salaryHTML(ms)}
     </section>
     <h3 class="field-label mt-5">Semaine par semaine</h3>
     <div class="flex flex-col gap-2">${rows}</div>
@@ -294,14 +466,22 @@ function mascotState() {
   const seasonal = () => PHRASES[season][phraseIdx % PHRASES[season].length];
 
   if (mascotOverride) return { mood: mascotOverride.mood, text: mascotOverride.text };
-  if (today?.off) return { mood: 'sleep', text: `Jour off aujourd'hui… Zzz. Repose-toi bien ${name} !` };
+  if (today?.off) {
+    const hn = holidayName(new Date());
+    if (today.kind === 'cp') return { mood: 'sleep', text: `Congé aujourd'hui, profite bien ${name} ! 🌴` };
+    if (today.kind === 'ferie') return { mood: 'sleep', text: `Jour férié${hn ? ` (${hn})` : ''} : repos !` };
+    if (today.kind === 'maladie') return { mood: 'tired', text: `Soigne-toi bien ${name}, repos et tisane 🤒` };
+    return { mood: 'sleep', text: `Jour off aujourd'hui… Zzz. Repose-toi bien ${name} !` };
+  }
   if (st.hasActual && st.overtime >= 4 * 60) {
     return { mood: 'angry', text: `Grrr… ${fmtDur(st.overtime, { sign: true })} supp. cette semaine, c'est beaucoup là ! 😤` };
   }
   if (st.hasActual && st.overtime > 0) {
     return { mood: 'tired', text: `Ouf, ${fmtDur(st.overtime, { sign: true })} supp. cette semaine ! Courage ${name} 💪` };
   }
-  if (st.hasActual && st.overtime === 0) return { mood: 'star', text: `${fmtDur(st.contract)} pile, contrat rempli ! Bravo ✨` };
+  if (st.hasActual && st.overtime <= 0 && st.actual + st.absence >= st.contract) {
+    return { mood: 'star', text: st.absence ? 'Contrat rempli avec tes congés, bravo ✨' : `${fmtDur(st.contract)} pile, contrat rempli ! Bravo ✨` };
+  }
   if (store.isWeekEmpty(week)) return { mood: 'happy', text: cur ? 'Ajoute tes horaires de la semaine ✍️' : 'Rien de prévu ici pour l’instant.' };
   if (today && hasShift(today.planned) && !hasShift(today.actual)) {
     return { mood: 'happy', text: `Aujourd'hui : ${fmtClock(today.planned.start)} – ${fmtClock(today.planned.end)}. Bon service ! ☕` };
@@ -351,7 +531,7 @@ function pokeMascot() {
 }
 
 function renderTools() {
-  const tools = [];
+  const tools = [`<button type="button" class="chip flex-none border-tone-200 bg-tone-50 text-accent-ink dark:border-tone-900/60 dark:bg-tone-900/25" data-act="plan">${icon('sparkle')} Planifier la semaine</button>`];
   const prev = store.peekWeek(toKey(addDays(monday, -7)));
   if (prev && prev.days.some((d) => d.off || hasShift(d.planned))) {
     tools.push(`<button type="button" class="chip flex-none" data-act="copy-prev">${icon('copy')} Copier la semaine dernière</button>`);
@@ -372,8 +552,9 @@ function renderDays() {
   $('#days').innerHTML = week.days.map((_, i) => dayHTML(i)).join('');
 }
 
-function daySub(d) {
-  if (d.off) return `Repos${d.note ? ' · ' + esc(d.note) : ''}`;
+function daySub(d, i) {
+  const hn = holidayName(addDays(monday, i));
+  if (d.off) return `${DAY_KINDS[d.kind].label}${d.kind === 'ferie' && hn ? ' · ' + esc(hn) : ''}${d.note ? ' · ' + esc(d.note) : ''}`;
   const parts = [];
   const p = hasShift(d.planned), a = hasShift(d.actual);
   if (p && a && d.planned.start === d.actual.start && d.planned.end === d.actual.end) {
@@ -388,7 +569,7 @@ function daySub(d) {
 
 function dayStatus(d) {
   const s = store.dayStats(d);
-  if (s.off) return `<span class="inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-xs font-extrabold bg-sage-100 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100">${icon('leaf', 'w-3.5 h-3.5')} Off</span>`;
+  if (s.off) return `<span class="inline-flex items-center gap-1 rounded-full px-2.5 h-7 text-xs font-extrabold whitespace-nowrap ${KIND_CLS[d.kind]}">${DAY_KINDS[d.kind].emoji} ${DAY_KINDS[d.kind].short}</span>`;
   if (s.actual != null) {
     const diff = s.diff ? `<span class="block text-[11px] font-extrabold ${s.diff > 0 ? 'text-accent-ink' : 'text-muted'}">${fmtDiff(s.diff)}</span>`
       : `<span class="block text-[11px] font-extrabold text-sage-700 dark:text-sage-300">réel ✓</span>`;
@@ -406,6 +587,7 @@ function dayHTML(i) {
   const isToday = sameDay(date, new Date());
   const open = expanded.has(i);
   const empty = store.isDayEmpty(d);
+  const hn = holidayName(date);
   return `
   <article class="card transition ${isToday ? 'ring-2 ring-accent/60 season-cap' : ''}" data-day="${i}">
     <div class="flex items-center">
@@ -417,16 +599,17 @@ function dayHTML(i) {
           </span>
         </span>
         <span class="flex-1 min-w-0">
-          <span class="flex items-center gap-2">
-            <span class="font-display text-[17px] font-semibold">${DAY_NAMES[i]}</span>
-            ${isToday ? '<span class="rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-tone-100 text-tone-700 dark:bg-tone-900/50 dark:text-tone-200">Aujourd\'hui</span>' : ''}
+          <span class="flex items-center gap-2 min-w-0">
+            <span class="font-display text-[17px] font-semibold flex-none">${DAY_NAMES[i]}</span>
+            ${isToday ? '<span class="flex-none rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-tone-100 text-tone-700 dark:bg-tone-900/50 dark:text-tone-200">Aujourd\'hui</span>' : ''}
+            ${hn ? `<span class="min-w-0 truncate rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${KIND_CLS.ferie}" title="${esc(hn)}">🎉 ${esc(hn)}</span>` : ''}
           </span>
-          <span class="block text-[13px] font-semibold text-muted truncate" data-out="sub">${daySub(d)}</span>
+          <span class="block text-[13px] font-semibold text-muted truncate" data-out="sub">${daySub(d, i)}</span>
         </span>
         <span class="flex-none text-right" data-out="status">${dayStatus(d)}</span>
         <svg class="w-5 h-5 flex-none text-muted transition-transform ${open ? 'rotate-180' : ''}" aria-hidden="true"><use href="#i-down"/></svg>
       </button>
-      <button type="button" class="chip mr-3 flex-none ${empty && !open ? '' : 'hidden'}" data-act="quick-off" aria-label="Marquer ${DAY_NAMES[i]} en jour off">${icon('leaf', 'w-3.5 h-3.5')} Off</button>
+      <button type="button" class="chip mr-3 flex-none ${empty && !open ? '' : 'hidden'}" data-act="quick-off" data-kind="${hn ? 'ferie' : 'off'}" aria-label="Marquer ${DAY_NAMES[i]} ${hn ? 'en jour férié chômé' : 'en jour off'}">${hn ? '🎉 Férié' : '🍃 Off'}</button>
     </div>
     <div id="day-body-${i}" class="px-3 pb-3 ${open ? '' : 'hidden'}">${open ? bodyHTML(i) : ''}</div>
   </article>`;
@@ -479,6 +662,10 @@ function shiftEditor(i, kind) {
         </label>
       </div>
       ${chips}
+      ${!isActual && validTemplates().length ? `
+      <div class="flex gap-2 mt-3 overflow-x-auto scrollbar-none -mx-1 px-1">
+        ${validTemplates().map((t) => `<button type="button" class="chip flex-none" data-act="tpl" data-id="${esc(t.id)}" aria-pressed="${d.planned.start === t.start && d.planned.end === t.end}">${esc(t.name || 'Horaire')} <span class="opacity-60 font-semibold">${fmtClock(t.start)}–${fmtClock(t.end)}</span></button>`).join('')}
+      </div>` : ''}
     </div>`;
 }
 
@@ -490,16 +677,25 @@ function bodyHTML(i) {
       <input type="text" class="field font-semibold" data-f="note" maxlength="60" value="${esc(d.note)}" placeholder="${SEASONS[currentSeason()].notePlaceholder}">
     </label>`;
   const head = `
-    <div class="flex items-center gap-2">
-      <button type="button" class="chip" data-act="off" aria-pressed="${d.off}">${icon('leaf')} Jour off</button>
-      <span class="flex-1"></span>
-      ${store.isDayEmpty(d) ? '' : `<button type="button" class="chip" data-act="clear">${icon('x')} Effacer</button>`}
+    <div class="flex items-start gap-2">
+      <div class="flex-1 min-w-0 flex flex-wrap gap-1.5">
+        ${Object.entries(DAY_KINDS).map(([k, v]) => `<button type="button" class="chip flex-none" data-act="kind" data-kind="${k}" aria-pressed="${d.off && d.kind === k}">${v.emoji} ${v.short}</button>`).join('')}
+      </div>
+      ${store.isDayEmpty(d) ? '' : `<button type="button" class="chip flex-none" data-act="clear" aria-label="Effacer la journée">${icon('x')}</button>`}
     </div>`;
   if (d.off) {
+    const hn = holidayName(addDays(monday, i));
+    const credit = `compte ${fmtDur(perDay())} dans ta semaine (pas en heures supp.)`;
+    const msg = {
+      off: [SEASONS[currentSeason()].offTitle, SEASONS[currentSeason()].offText],
+      cp: ['Bonnes vacances ! 🌴', `Congé payé · ${credit}`],
+      ferie: [`Jour férié${hn ? ` · ${hn}` : ''} 🎉`, `Chômé · ${credit}`],
+      maladie: ['Prends soin de toi 🤒', `Absence justifiée · ${credit}`],
+    }[d.kind];
     return `${head}
-      <div class="mt-3 rounded-2xl bg-sage-100/80 dark:bg-sage-700/25 p-4 text-center">
-        <p class="font-display text-lg font-semibold text-sage-700 dark:text-sage-100">${SEASONS[currentSeason()].offTitle}</p>
-        <p class="text-sm font-semibold text-sage-700/80 dark:text-sage-100/70">${SEASONS[currentSeason()].offText}</p>
+      <div class="mt-3 rounded-2xl ${d.kind === 'off' ? 'bg-sage-100/80 dark:bg-sage-700/25' : KIND_CLS[d.kind].split(' ').filter((c) => c.startsWith('bg-') || c.startsWith('dark:bg-')).join(' ')} p-4 text-center">
+        <p class="font-display text-lg font-semibold">${esc(msg[0])}</p>
+        <p class="text-sm font-semibold opacity-80">${esc(msg[1])}</p>
       </div>${note}`;
   }
   return `${head}${shiftEditor(i, 'planned')}${shiftEditor(i, 'actual')}${note}`;
@@ -517,7 +713,7 @@ function refreshDay(i) {
   if (!el) return;
   const d = week.days[i];
   const s = store.dayStats(d);
-  $('[data-out="sub"]', el).innerHTML = daySub(d);
+  $('[data-out="sub"]', el).innerHTML = daySub(d, i);
   $('[data-out="status"]', el).innerHTML = dayStatus(d);
   const p = $('[data-out="planned"]', el); if (p) p.textContent = s.planned != null ? fmtDur(s.planned) : '—';
   const a = $('[data-out="actual"]', el); if (a) a.textContent = s.actual != null ? fmtDur(s.actual) : '—';
@@ -578,8 +774,24 @@ function onDaysClick(e) {
     }
     case 'quick-off':
       d.off = true;
+      d.kind = btn.dataset.kind || 'off';
       haptic();
       return commit({ day: i });
+    case 'kind': {
+      const k = btn.dataset.kind;
+      if (d.off && d.kind === k) d.off = false;
+      else { d.off = true; d.kind = k; }
+      haptic();
+      return commit({ day: i });
+    }
+    case 'tpl': {
+      const t = settings().templates.find((x) => x.id === btn.dataset.id);
+      if (!t) return;
+      d.off = false;
+      d.planned = { start: t.start, end: t.end, brk: t.brk };
+      haptic();
+      return commit({ day: i });
+    }
     case 'off':
       d.off = !d.off;
       haptic();
@@ -616,6 +828,8 @@ function onToolsClick(e) {
   const undo = () => { store.setWeek(weekKey, snapshot); week = store.getWeek(weekKey); renderAll(); };
 
   switch (btn.dataset.act) {
+    case 'plan':
+      return openPlan();
     case 'copy-prev': {
       const prev = store.peekWeek(toKey(addDays(monday, -7)));
       if (!prev) return;
@@ -642,6 +856,93 @@ function onToolsClick(e) {
       commit({ full: true });
       return toast('Semaine vidée', { action: 'Annuler', onAction: undo });
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Planifier la semaine (boutons rapides)                              */
+/* ------------------------------------------------------------------ */
+const dlgPlan = $('#dlg-plan');
+
+function openPlan() {
+  renderPlan();
+  openDialog(dlgPlan);
+}
+
+function planRowHTML(i) {
+  const d = week.days[i];
+  const date = addDays(monday, i);
+  const hn = holidayName(date);
+  const tpls = validTemplates();
+  const state = d.off ? `${DAY_KINDS[d.kind].emoji} ${DAY_KINDS[d.kind].label}`
+    : hasShift(d.planned) ? `${fmtClock(d.planned.start)} – ${fmtClock(d.planned.end)}` : '—';
+  return `
+    <div class="card p-3" data-plan-day="${i}">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="font-display text-[16px] font-semibold">${DAY_SHORT[i]} ${date.getDate()}</span>
+        ${hn ? `<span class="truncate rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider ${KIND_CLS.ferie}">🎉 ${esc(hn)}</span>` : ''}
+        <span class="ml-auto text-xs font-bold text-muted whitespace-nowrap">${state}</span>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        ${tpls.map((t) => `<button type="button" class="chip flex-none" data-plan="tpl" data-id="${esc(t.id)}" aria-pressed="${!d.off && d.planned.start === t.start && d.planned.end === t.end}">${esc(t.name || 'Horaire')}</button>`).join('')}
+        ${['off', 'cp', ...(hn ? ['ferie'] : [])].map((k) => `<button type="button" class="chip flex-none" data-plan="kind" data-kind="${k}" aria-pressed="${d.off && d.kind === k}">${DAY_KINDS[k].emoji} ${DAY_KINDS[k].short}</button>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderPlan() {
+  $('#plan-week').textContent = `Semaine ${isoWeek(monday)} · ${weekRangeShort(monday)}`;
+  const tpls = validTemplates();
+  $('#plan-legend').innerHTML = tpls.length
+    ? tpls.map((t) => `<span><b class="text-ink-soft">${esc(t.name || 'Horaire')}</b> ${fmtClock(t.start)}–${fmtClock(t.end)}${t.brk ? ` · ${t.brk} min` : ''}</span>`).join('')
+    : 'Crée tes horaires types dans les réglages.';
+  $('#plan-rows').innerHTML = week.days.map((_, i) => planRowHTML(i)).join('');
+}
+
+function onPlanClick(e) {
+  const btn = e.target.closest('[data-plan]');
+  if (!btn) return;
+  const i = Number(btn.closest('[data-plan-day]').dataset.planDay);
+  const d = week.days[i];
+  if (btn.dataset.plan === 'tpl') {
+    const t = settings().templates.find((x) => x.id === btn.dataset.id);
+    if (!t) return;
+    const same = !d.off && d.planned.start === t.start && d.planned.end === t.end;
+    d.off = false;
+    d.planned = same ? store.blankShift() : { start: t.start, end: t.end, brk: t.brk };
+  } else {
+    const k = btn.dataset.kind;
+    if (d.off && d.kind === k) d.off = false;
+    else { d.off = true; d.kind = k; }
+  }
+  haptic();
+  btn.closest('[data-plan-day]').outerHTML = planRowHTML(i);
+  commit({ full: true });
+}
+
+/* ------------------------------------------------------------------ */
+/* Export calendrier (.ics)                                            */
+/* ------------------------------------------------------------------ */
+function exportICS(days, filename) {
+  const { text, count } = buildICS(days, { name: settings().name });
+  if (!count) return toast('Rien à ajouter : saisis d’abord des horaires');
+  if (isIOS) {
+    // Safari iOS ouvre directement l'écran « Ajouter au calendrier » pour un fichier calendrier
+    location.href = `data:text/calendar;charset=utf-8,${encodeURIComponent(text)}`;
+  } else {
+    downloadBlob(new Blob([text], { type: 'text/calendar;charset=utf-8' }), filename);
+  }
+  toast(`${count} événement${count > 1 ? 's' : ''} prêt${count > 1 ? 's' : ''} pour ton calendrier 📅`);
+}
+
+const weekDaysForICS = () => week.days.map((day, i) => ({ date: addDays(monday, i), day }));
+
+function monthDaysForICS(y, m) {
+  const out = [];
+  for (let d = new Date(y, m, 1); d.getMonth() === m; d = addDays(d, 1)) {
+    const w = store.peekWeek(toKey(mondayOf(d)));
+    if (w) out.push({ date: d, day: w.days[(d.getDay() + 6) % 7] });
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -722,6 +1023,32 @@ function applySeason({ rerender = true } = {}) {
   if (rerender && changed) renderAll();
 }
 
+function renderTemplates() {
+  const tpls = settings().templates;
+  $('#tpl-list').innerHTML = tpls.map((t) => `
+    <div class="rounded-2xl border border-line bg-surface-2/60 p-3" data-tpl="${esc(t.id)}">
+      <div class="flex gap-2">
+        <input class="field h-10 flex-1" data-tf="name" value="${esc(t.name)}" maxlength="16" placeholder="Nom (ex. Ouverture)" aria-label="Nom de l'horaire">
+        <button type="button" class="icon-btn w-10 h-10 flex-none" data-tdel aria-label="Supprimer ${esc(t.name)}">${icon('trash', 'w-4 h-4')}</button>
+      </div>
+      <div class="grid grid-cols-[1fr_1fr_4.75rem] gap-2 mt-2">
+        <input type="time" class="field h-10 px-2.5" data-tf="start" value="${t.start}" aria-label="Début">
+        <input type="time" class="field h-10 px-2.5" data-tf="end" value="${t.end}" aria-label="Fin">
+        <span class="relative block"><input type="number" class="field h-10 pr-9" data-tf="brk" value="${t.brk}" min="0" max="240" step="5" inputmode="numeric" aria-label="Pause"><span class="field-suffix right-2.5">min</span></span>
+      </div>
+    </div>`).join('') || '<p class="text-sm font-semibold text-muted">Aucun horaire type pour le moment.</p>';
+  $('#tpl-add').disabled = tpls.length >= 6;
+}
+
+function onTemplateInput(e) {
+  const row = e.target.closest('[data-tpl]');
+  const field = e.target.dataset.tf;
+  if (!row || !field) return;
+  const tpls = settings().templates.map((t) => (t.id === row.dataset.tpl ? { ...t, [field]: field === 'brk' ? Number(e.target.value) || 0 : e.target.value } : t));
+  store.updateSettings({ templates: tpls });
+  if (e.type === 'change') renderDays();
+}
+
 function renderSeasonPicker() {
   const cur = settings().season;
   const opts = [['auto', `Auto · ${SEASONS[seasonOf(new Date())].label}`],
@@ -738,6 +1065,10 @@ function openSettings() {
   $('#set-majoration').checked = !!s.showMajoration;
   $('#set-fx').checked = !!s.seasonFx;
   $('#set-mascot').checked = !!s.mascot;
+  $('#set-rate').value = s.hourlyRate ?? '';
+  $('#set-leave').value = s.leaveBalance ?? '';
+  $('#set-leave-date').value = s.leaveBalanceDate ?? '';
+  renderTemplates();
   renderSeasonPicker();
   renderInstall();
   openDialog(dlgSettings);
@@ -768,10 +1099,14 @@ function onSettingsInput() {
     showMajoration: $('#set-majoration').checked,
     seasonFx: $('#set-fx').checked,
     mascot: $('#set-mascot').checked,
+    hourlyRate: $('#set-rate').value.replace(',', '.'),
+    leaveBalance: $('#set-leave').value.replace(',', '.'),
+    leaveBalanceDate: $('#set-leave-date').value || null,
   });
   applySeason();
   renderHeader();
   renderSummary();
+  renderDays();
 }
 
 /* ------------------------------------------------------------------ */
@@ -898,7 +1233,35 @@ function bind() {
     haptic();
   });
   $('#mascot').addEventListener('click', (e) => e.target.closest('#gb-btn') && pokeMascot());
-  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration', '#set-fx', '#set-mascot']) {
+  $('#plan-rows').addEventListener('click', onPlanClick);
+  $$('[data-tab]', dlgMonth).forEach((b) => b.addEventListener('click', () => { bilanTab = b.dataset.tab; renderBilan(); }));
+  dlgMonth.addEventListener('click', (e) => {
+    if (e.target.closest('[data-open-settings]')) { closeDialog(dlgMonth); openSettings(); return; }
+    const mo = e.target.closest('[data-month]');
+    if (mo) { monthCursor = { y: yearCursor, m: Number(mo.dataset.month) }; bilanTab = 'month'; renderBilan(); }
+  });
+  $('#month-ics').addEventListener('click', () => exportICS(monthDaysForICS(monthCursor.y, monthCursor.m), `planning-${monthCursor.y}-${String(monthCursor.m + 1).padStart(2, '0')}.ics`));
+  $('#share-ics').addEventListener('click', () => exportICS(weekDaysForICS(), `planning-S${isoWeek(monday)}-${weekKey}.ics`));
+  $('#tpl-list').addEventListener('input', onTemplateInput);
+  $('#tpl-list').addEventListener('change', onTemplateInput);
+  $('#tpl-list').addEventListener('click', (e) => {
+    const del = e.target.closest('[data-tdel]');
+    if (!del) return;
+    const id = del.closest('[data-tpl]').dataset.tpl;
+    store.updateSettings({ templates: settings().templates.filter((t) => t.id !== id) });
+    renderTemplates();
+    renderDays();
+  });
+  $('#tpl-add').addEventListener('click', () => {
+    const tpls = [...settings().templates, { id: `t${Date.now()}`, name: '', start: '08:00', end: '16:00', brk: settings().defaultBreak }];
+    store.updateSettings({ templates: tpls });
+    renderTemplates();
+    $('#tpl-list [data-tpl]:last-child [data-tf="name"]')?.focus();
+  });
+  $('#set-leave').addEventListener('input', () => {
+    if ($('#set-leave').value && !$('#set-leave-date').value) { $('#set-leave-date').value = toKey(new Date()); onSettingsInput(); }
+  });
+  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration', '#set-fx', '#set-mascot', '#set-rate', '#set-leave', '#set-leave-date']) {
     $(id).addEventListener('input', onSettingsInput);
     $(id).addEventListener('change', onSettingsInput);
   }

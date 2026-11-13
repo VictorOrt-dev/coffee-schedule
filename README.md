@@ -8,6 +8,12 @@ coffee shop d'automne.
 - **Raccourcis** : « Comme prévu », +15 min / +30 min / +1 h, copie de la semaine dernière, validation des jours passés en un tap, annulation
 - **Calculs en direct** : total prévu, total effectué, heures supp. (« 39h30 effectuées = +4h30 supp. »), jauge vs contrat, détail indicatif des majorations (+25 % / +50 %)
 - **Total du mois** (bouton 📅 ou encart « Total novembre ») : heures prévues et effectuées du mois, heures supp., jours travaillés, comparaison à la base mensualisée (35 h × 52 / 12 = 151h40), détail semaine par semaine et partage en texte. Les heures supp. restent calculées par semaine ; une semaine à cheval compte dans le mois où elle se termine
+- **Horaires types** (Ouverture, Journée, Fermeture… modifiables dans les réglages) : un bouton remplit la journée, et la feuille « Planifier la semaine » règle les 7 jours en quelques appuis
+- **Jours fériés** français calculés automatiquement (Pâques, Ascension, Pentecôte comprises), signalés sur chaque jour
+- **Congés & absences** : Off, Congé payé, Férié chômé, Maladie. Les absences payées complètent le contrat (contrat/5 par jour) sans créer d'heures supp. Solde de congés : on recopie celui de la fiche de paie, l'app déduit les congés posés ensuite
+- **Estimation en euros** avec le taux horaire brut : valeur des heures supp. majorées (semaine, mois, année) et salaire brut mensuel estimé
+- **Stats** (Mes bilans → Année & stats) : heures de l'année, heures supp., moyenne par semaine, graphiques des 8 dernières semaines et des 12 mois, congés restants
+- **Export calendrier** (.ics) de la semaine ou du mois : sur iPhone, l'écran « Ajouter au calendrier » s'ouvre directement
 - **Planning propre** : carte « Coffee & Schedule » en PNG (html2canvas, ×3 = 1188 px de large), en version *Planning prévu* ou *Bilan effectué*, partagée via l'API Web Share (WhatsApp, SMS…), ou téléchargée, ou envoyée en texte
 - **100 % local** : `localStorage`, sans compte ni serveur. Export / import d'une sauvegarde JSON
 - **Ambiance de saison** (automatique selon la date, ou choisie dans ⚙︎ Réglages) :
@@ -35,6 +41,8 @@ coffee-schedule/
 │   │   ├── store.js               # localStorage + calculs de la semaine
 │   │   ├── share.js               # Carte, export PNG, Web Share, texte
 │   │   ├── seasons.js             # Ambiances de saison : textes, décors, logo, particules
+│   │   ├── holidays.js            # Jours fériés français
+│   │   ├── calendar.js            # Export .ics (calendrier iPhone, Google…)
 │   │   ├── mascot.js              # Goombouille (petit Goomba) : dessin SVG, tenues, humeurs, phrases
 │   │   └── time.js                # Dates, semaines ISO, durées
 │   ├── fonts/                     # Nunito + Fredoka (auto-hébergées)

@@ -35,6 +35,8 @@
   <link rel="modulepreload" href="js/share.js">
   <link rel="modulepreload" href="js/seasons.js">
   <link rel="modulepreload" href="js/mascot.js">
+  <link rel="modulepreload" href="js/holidays.js">
+  <link rel="modulepreload" href="js/calendar.js">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
@@ -71,7 +73,7 @@
         <p id="hello" class="text-[11px] font-extrabold uppercase tracking-[.16em] text-accent-ink">Bonjour</p>
         <h1 id="greeting" class="font-display text-[22px] font-semibold leading-tight truncate">Bonjour</h1>
       </div>
-      <button id="btn-month" type="button" class="icon-btn bg-surface border border-line shadow-soft" aria-label="Total du mois">
+      <button id="btn-month" type="button" class="icon-btn bg-surface border border-line shadow-soft" aria-label="Mes bilans et statistiques">
         <svg class="w-5 h-5"><use href="#i-calendar"/></svg>
       </button>
       <button id="btn-settings" type="button" class="icon-btn bg-surface border border-line shadow-soft" aria-label="Réglages">
@@ -144,9 +146,10 @@
       <button id="share-native" type="button" class="btn-accent w-full h-14 mt-4 text-base rounded-3xl" disabled>
         <svg class="w-5 h-5"><use href="#i-share"/></svg> Partager l'image
       </button>
-      <div class="grid grid-cols-2 gap-2 mt-2">
-        <button id="share-download" type="button" class="btn-soft" disabled><svg class="w-5 h-5"><use href="#i-download"/></svg> PNG</button>
-        <button id="share-text" type="button" class="btn-soft"><svg class="w-5 h-5"><use href="#i-text"/></svg> En texte</button>
+      <div class="grid grid-cols-3 gap-2 mt-2">
+        <button id="share-download" type="button" class="btn-soft px-2" disabled><svg class="w-5 h-5"><use href="#i-download"/></svg> PNG</button>
+        <button id="share-text" type="button" class="btn-soft px-2"><svg class="w-5 h-5"><use href="#i-text"/></svg> Texte</button>
+        <button id="share-ics" type="button" class="btn-soft px-2"><svg class="w-5 h-5"><use href="#i-calendar"/></svg> Agenda</button>
       </div>
       <p class="mt-3 text-center text-xs font-semibold text-muted">Parfait pour WhatsApp, SMS ou Instagram ✨</p>
     </div>
@@ -157,16 +160,39 @@
     <div class="sheet-grip"></div>
     <div class="px-5 pt-2 pb-6 overflow-y-auto max-h-[calc(92dvh-1rem)]">
       <div class="flex items-center justify-between">
-        <h2 id="month-title" class="font-display text-xl font-semibold">Mon mois</h2>
+        <h2 id="month-title" class="font-display text-xl font-semibold">Mes bilans</h2>
         <button type="button" class="icon-btn -mr-2" data-close aria-label="Fermer"><svg class="w-5 h-5"><use href="#i-x"/></svg></button>
       </div>
-      <nav class="mt-3 card flex items-center p-1.5" aria-label="Mois">
+      <div class="seg mt-3" role="group" aria-label="Vue">
+        <button type="button" data-tab="month" aria-pressed="true">Mois</button>
+        <button type="button" data-tab="stats" aria-pressed="false">Année &amp; stats</button>
+      </div>
+      <nav class="mt-3 card flex items-center p-1.5" aria-label="Période">
         <button id="prev-month" type="button" class="icon-btn" aria-label="Mois précédent"><svg class="w-5 h-5"><use href="#i-left"/></svg></button>
         <span id="month-label" class="flex-1 text-center font-display text-lg font-semibold">—</span>
         <button id="next-month" type="button" class="icon-btn" aria-label="Mois suivant"><svg class="w-5 h-5"><use href="#i-right"/></svg></button>
       </nav>
       <div id="month-body"></div>
-      <button id="month-share" type="button" class="btn-soft w-full mt-4"><svg class="w-5 h-5"><use href="#i-text"/></svg> Partager le total du mois</button>
+      <div id="month-actions" class="grid grid-cols-2 gap-2 mt-4">
+        <button id="month-share" type="button" class="btn-soft"><svg class="w-5 h-5"><use href="#i-text"/></svg> En texte</button>
+        <button id="month-ics" type="button" class="btn-soft"><svg class="w-5 h-5"><use href="#i-calendar"/></svg> Agenda</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Feuille : planifier la semaine -->
+  <dialog id="dlg-plan" class="sheet" aria-labelledby="plan-title">
+    <div class="sheet-grip"></div>
+    <div class="px-5 pt-2 pb-6 overflow-y-auto max-h-[calc(92dvh-1rem)]">
+      <div class="flex items-center justify-between">
+        <h2 id="plan-title" class="font-display text-xl font-semibold">Planifier ma semaine</h2>
+        <button type="button" class="icon-btn -mr-2" data-close aria-label="Fermer"><svg class="w-5 h-5"><use href="#i-x"/></svg></button>
+      </div>
+      <p id="plan-week" class="text-sm font-bold text-muted"></p>
+      <div id="plan-legend" class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-semibold text-muted"></div>
+      <div id="plan-rows" class="mt-3 flex flex-col gap-2"></div>
+      <p class="mt-3 text-xs font-semibold text-muted">Un appui = horaires prévus du jour. Réappuie pour retirer. Tes horaires types se modifient dans ⚙︎ Réglages.</p>
+      <button type="button" class="btn-primary w-full mt-4" data-close>Terminé</button>
     </div>
   </dialog>
 
@@ -207,6 +233,38 @@
           </span>
           <input id="set-majoration" type="checkbox" class="w-6 h-6 accent-tone-500 flex-none">
         </label>
+      </div>
+
+      <h3 class="field-label mt-5">Salaire &amp; congés</h3>
+      <div class="card p-4 space-y-3">
+        <label class="block">
+          <span class="field-label">Taux horaire brut</span>
+          <span class="relative block">
+            <input id="set-rate" type="number" inputmode="decimal" min="0" step="0.01" class="field pr-14" placeholder="ex. 12,50">
+            <span class="field-suffix">€ / h</span>
+          </span>
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="block">
+            <span class="field-label">Solde de congés</span>
+            <span class="relative block">
+              <input id="set-leave" type="number" inputmode="decimal" min="0" step="0.5" class="field pr-12" placeholder="ex. 12">
+              <span class="field-suffix">jours</span>
+            </span>
+          </label>
+          <label class="block">
+            <span class="field-label">À la date du</span>
+            <input id="set-leave-date" type="date" class="field px-2.5">
+          </label>
+        </div>
+        <p class="text-xs font-semibold text-muted">Recopie le solde de ta fiche de paie : les congés que tu poses ensuite dans l’app sont déduits tout seuls. Le taux sert aux estimations en euros (brut, indicatif).</p>
+      </div>
+
+      <h3 class="field-label mt-5">Mes horaires types</h3>
+      <div class="card p-4">
+        <p class="text-sm font-semibold text-ink-soft">Ils apparaissent en petits boutons pour remplir tes journées en un geste.</p>
+        <div id="tpl-list" class="space-y-3 mt-3"></div>
+        <button id="tpl-add" type="button" class="btn-soft w-full mt-3">+ Ajouter un horaire type</button>
       </div>
 
       <h3 class="field-label mt-5">Ambiance</h3>
