@@ -5,9 +5,10 @@ import {
 } from './time.js';
 import * as store from './store.js';
 import { SEASONS, SEASON_IDS, cornerArt, logoSVG, renderParticles, seasonOf } from './seasons.js';
+import { PHRASES, goombouilleSVG } from './mascot.js';
 import { buildCardHTML, buildMonthText, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const icon = (name, cls = 'w-4 h-4') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -154,6 +155,7 @@ function renderSummary() {
       ${mini('Écart', st.diffVsPlanned == null ? '—' : fmtDur(st.diffVsPlanned, { sign: true }), st.diffVsPlanned > 0 ? 'text-accent-ink' : '')}
     </div>
     ${monthTeaserHTML()}`;
+  renderMascot();
 }
 
 /** Mois « de référence » de la semaine affichée (celui de son jeudi). */
@@ -272,6 +274,77 @@ function renderMonth() {
       une semaine à cheval sur deux mois compte dans le mois où elle se termine.
       Base mensualisée : ${fmtDur(Math.round(settings().contractHours * 60))} × 52 / 12 = ${fmtDur(ms.base)}.
     </p>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Goombouille, la mascotte                                            */
+/* ------------------------------------------------------------------ */
+let mascotKey = '';
+let phraseIdx = Math.floor(Math.random() * 4);
+let mascotOverride = null;
+let mascotTimer = null;
+
+/** Humeur + message selon la semaine affichée et la journée. */
+function mascotState() {
+  const season = currentSeason();
+  const name = settings().name?.trim() || 'Goombouille';
+  const st = store.weekStats(week);
+  const cur = isCurrentWeek();
+  const today = cur ? week.days[todayIndex()] : null;
+  const seasonal = () => PHRASES[season][phraseIdx % PHRASES[season].length];
+
+  if (mascotOverride) return { mood: mascotOverride.mood, text: mascotOverride.text };
+  if (today?.off) return { mood: 'sleep', text: `Jour off aujourd'hui… Zzz. Repose-toi bien ${name} !` };
+  if (st.hasActual && st.overtime > 0) {
+    return { mood: 'tired', text: `Ouf, ${fmtDur(st.overtime, { sign: true })} supp. cette semaine ! Courage ${name} 💪` };
+  }
+  if (st.hasActual && st.overtime === 0) return { mood: 'star', text: `${fmtDur(st.contract)} pile, contrat rempli ! Bravo ✨` };
+  if (store.isWeekEmpty(week)) return { mood: 'happy', text: cur ? 'Ajoute tes horaires de la semaine ✍️' : 'Rien de prévu ici pour l’instant.' };
+  if (today && hasShift(today.planned) && !hasShift(today.actual)) {
+    return { mood: 'happy', text: `Aujourd'hui : ${fmtClock(today.planned.start)} – ${fmtClock(today.planned.end)}. Bon service ! ☕` };
+  }
+  return { mood: 'happy', text: seasonal() };
+}
+
+function renderMascot() {
+  const host = $('#mascot');
+  if (!settings().mascot) { host.innerHTML = ''; host.classList.add('hidden'); mascotKey = ''; return; }
+  host.classList.remove('hidden');
+  const season = currentSeason();
+  const { mood, text } = mascotState();
+  const key = `${season}|${mood}`;
+  if (key !== mascotKey || !$('#gb-btn')) {
+    host.innerHTML = `
+      <button id="gb-btn" type="button" class="flex-none -ml-1 -mb-1 w-[76px] h-[76px] active:scale-95 transition" aria-label="Goombouille, ta mascotte : touche-la pour une nouvelle phrase">
+        ${goombouilleSVG(season, mood)}
+      </button>
+      <div class="relative flex-1 min-w-0 mb-3 card px-3.5 py-2.5">
+        <span class="absolute -left-[7px] bottom-4 w-3 h-3 rotate-45 bg-surface border-l border-b border-line/70"></span>
+        <p id="gb-text" class="relative text-[14px] font-bold text-ink-soft leading-snug"></p>
+      </div>`;
+    mascotKey = key;
+  }
+  const p = $('#gb-text');
+  if (p.textContent !== text) {
+    p.textContent = text;
+    p.parentElement.classList.remove('gb-bubble-in');
+    void p.offsetWidth;
+    p.parentElement.classList.add('gb-bubble-in');
+  }
+}
+
+function pokeMascot() {
+  const season = currentSeason();
+  phraseIdx++;
+  mascotOverride = { mood: 'happy', text: PHRASES[season][phraseIdx % PHRASES[season].length] };
+  renderMascot();
+  const btn = $('#gb-btn');
+  btn.classList.remove('gb-jump');
+  void btn.offsetWidth;
+  btn.classList.add('gb-jump');
+  haptic();
+  clearTimeout(mascotTimer);
+  mascotTimer = setTimeout(() => { mascotOverride = null; renderMascot(); }, 5000);
 }
 
 function renderTools() {
@@ -661,6 +734,7 @@ function openSettings() {
   $('#set-break').value = s.defaultBreak;
   $('#set-majoration').checked = !!s.showMajoration;
   $('#set-fx').checked = !!s.seasonFx;
+  $('#set-mascot').checked = !!s.mascot;
   renderSeasonPicker();
   renderInstall();
   openDialog(dlgSettings);
@@ -690,6 +764,7 @@ function onSettingsInput() {
     defaultBreak: Number($('#set-break').value) || 0,
     showMajoration: $('#set-majoration').checked,
     seasonFx: $('#set-fx').checked,
+    mascot: $('#set-mascot').checked,
   });
   applySeason();
   renderHeader();
@@ -819,7 +894,8 @@ function bind() {
     applySeason();
     haptic();
   });
-  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration', '#set-fx']) {
+  $('#mascot').addEventListener('click', (e) => e.target.closest('#gb-btn') && pokeMascot());
+  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration', '#set-fx', '#set-mascot']) {
     $(id).addEventListener('input', onSettingsInput);
     $(id).addEventListener('change', onSettingsInput);
   }

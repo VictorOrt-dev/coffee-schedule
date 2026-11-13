@@ -355,3 +355,17 @@
   :root[data-season] .season-art { color: rgb(var(--tone-800) / .45); }
   :root[data-season='winter'] .season-art { color: rgb(120 145 178 / .22); }
 }
+
+/* ---------- Goombouille (mascotte) ---------- */
+.gb { overflow: visible; }
+.gb .gb-bob { animation: gb-bob 2.6s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.gb .gb-eyes { animation: gb-blink 4.5s infinite; transform-box: fill-box; transform-origin: center; }
+.gb .gb-zzz { animation: gb-zzz 2.4s ease-in-out infinite; }
+.gb .gb-fly { animation: gb-fly 1.8s ease-in-out infinite alternate; }
+.gb-jump .gb { animation: gb-jump .55s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes gb-bob { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.03, .97); } }
+@keyframes gb-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes gb-zzz { 0%, 100% { transform: translateY(0); opacity: .9; } 50% { transform: translateY(-3px); opacity: .5; } }
+@keyframes gb-fly { from { transform: translate(12px, 22px) rotate(-8deg); } to { transform: translate(16px, 17px) rotate(8deg); } }
+@keyframes gb-jump { 0% { transform: translateY(0); } 40% { transform: translateY(-14px) rotate(-4deg); } 100% { transform: translateY(0); } }
+.gb-bubble-in { animation: pop .25s ease-out; }
