@@ -4,7 +4,7 @@
  * - Ressources : stale-while-revalidate
  * __BUILD__ est remplacé par le SHA du commit lors du déploiement GitHub Actions.
  */
-const VERSION = 'cs-1.5.0-__BUILD__';
+const VERSION = 'cs-1.5.1-__BUILD__';
 const CACHE = `coffee-schedule-${VERSION}`;
 
 const ASSETS = [

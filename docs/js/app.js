@@ -12,7 +12,7 @@ import { buildICS } from './calendar.js';
 const { DAY_KINDS } = store;
 import { buildCardHTML, buildMonthText, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const icon = (name, cls = 'w-4 h-4') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -39,6 +39,8 @@ let monday = mondayOf(new Date());
 let weekKey = toKey(monday);
 let week = store.getWeek(weekKey);
 const expanded = new Set();
+const uiAbsence = new Set();   // jours où la ligne « Repos ou absence ? » est dépliée
+const uiActualEdit = new Set(); // jours où les champs des heures réelles sont dépliés
 
 const todayIndex = () => (new Date().getDay() + 6) % 7;
 const isCurrentWeek = () => weekKey === toKey(mondayOf(new Date()));
@@ -48,6 +50,8 @@ function goToWeek(date, { animate = true } = {}) {
   weekKey = toKey(monday);
   week = store.getWeek(weekKey);
   expanded.clear();
+  uiAbsence.clear();
+  uiActualEdit.clear();
   if (isCurrentWeek()) expanded.add(todayIndex());
   renderAll();
   if (animate) {
@@ -591,7 +595,7 @@ function renderTools() {
   const lastIdx = isCurrentWeek() ? todayIndex() : monday < mondayOf(new Date()) ? 6 : -1;
   const fillable = week.days.filter((d, i) => i <= lastIdx && !d.off && hasShift(d.planned) && !hasShift(d.actual)).length;
   if (fillable) {
-    tools.push(`<button type="button" class="chip flex-none" data-act="fill-past">${icon('check')} ${fillable} jour${fillable > 1 ? 's' : ''} comme prévu</button>`);
+    tools.push(`<button type="button" class="chip flex-none" data-act="fill-past">${icon('check')} Valider ${fillable} jour${fillable > 1 ? 's' : ''} comme prévu</button>`);
   }
   if (!store.isWeekEmpty(week)) {
     tools.push(`<button type="button" class="chip flex-none" data-act="clear-week">${icon('trash')} Vider la semaine</button>`);
@@ -681,27 +685,8 @@ function shiftEditor(i, kind) {
   const dur = shiftMinutes(s);
   const isActual = kind === 'actual';
   const placeholder = isActual && d.planned.brk != null ? d.planned.brk : settings().defaultBreak;
-  const chips = isActual ? `
-    <div class="flex gap-2 mt-3 overflow-x-auto scrollbar-none -mx-1 px-1">
-      <button type="button" class="chip flex-none" data-act="same" ${hasShift(d.planned) ? '' : 'disabled'}>${icon('check')} Comme prévu</button>
-      <button type="button" class="chip flex-none" data-act="plus" data-min="15">+15 min</button>
-      <button type="button" class="chip flex-none" data-act="plus" data-min="30">+30 min</button>
-      <button type="button" class="chip flex-none" data-act="plus" data-min="60">+1h</button>
-    </div>` : '';
-  const diff = isActual ? store.dayStats(d).diff : null;
-  return `
-    <div role="group" aria-label="${isActual ? 'Horaires réels' : 'Horaires prévus'}"
-         class="mt-3 rounded-2xl border p-3 ${isActual ? 'border-tone-200 bg-tone-50/70 dark:border-tone-900/60 dark:bg-tone-900/15' : 'border-line bg-surface'}">
-      <div class="flex items-center justify-between mb-2 gap-2">
-        <span class="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wider ${isActual ? 'text-accent-ink' : 'text-ink-soft'}">
-          ${icon(isActual ? 'flame' : 'calendar')} ${isActual ? 'Réellement effectué' : 'Horaires prévus'}
-        </span>
-        <span class="flex items-baseline gap-2">
-          ${isActual ? `<span class="text-xs font-extrabold text-accent-ink" data-out="diff">${diff ? fmtDiff(diff) : ''}</span>` : ''}
-          <span class="font-display text-lg font-semibold" data-out="${kind}">${dur != null ? fmtDur(dur) : '—'}</span>
-        </span>
-      </div>
-      <div class="grid grid-cols-[1fr_1fr_4.75rem] gap-2">
+  const inputs = `
+      <div class="grid grid-cols-[1fr_1fr_4.75rem] gap-2 ${isActual ? 'mt-3' : ''}">
         ${timeField(kind, 'start', 'Début', s.start)}
         ${timeField(kind, 'end', 'Fin', s.end)}
         <label class="block min-w-0">
@@ -712,13 +697,53 @@ function shiftEditor(i, kind) {
             <span class="field-suffix right-2.5">min</span>
           </span>
         </label>
+      </div>`;
+
+  if (!isActual) {
+    const tpls = validTemplates();
+    return `
+    <div role="group" aria-label="Horaires prévus" class="mt-3 rounded-2xl border border-line bg-surface p-3">
+      <div class="flex items-center justify-between mb-2 gap-2">
+        <span class="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wider text-ink-soft">${icon('calendar')} Prévu</span>
+        <span class="font-display text-lg font-semibold" data-out="planned">${dur != null ? fmtDur(dur) : '—'}</span>
       </div>
-      ${chips}
-      ${!isActual && validTemplates().length ? `
-      <div class="flex gap-2 mt-3 overflow-x-auto scrollbar-none -mx-1 px-1">
-        ${validTemplates().map((t) => `<button type="button" class="chip flex-none" data-act="tpl" data-id="${esc(t.id)}" aria-pressed="${d.planned.start === t.start && d.planned.end === t.end}">${esc(t.name || 'Horaire')} <span class="opacity-60 font-semibold">${fmtClock(t.start)}–${fmtClock(t.end)}</span></button>`).join('')}
+      ${tpls.length ? `
+      <div class="flex flex-wrap gap-1.5 mb-3">
+        ${tpls.map((t) => `<button type="button" class="chip" data-act="tpl" data-id="${esc(t.id)}" aria-pressed="${d.planned.start === t.start && d.planned.end === t.end}">${esc(t.name || 'Horaire')} <span class="opacity-60 font-semibold">${fmtClock(t.start)}–${fmtClock(t.end)}</span></button>`).join('')}
       </div>` : ''}
+      ${inputs}
     </div>`;
+  }
+
+  // Heures réelles : résumé + boutons rapides ; les champs ne s'affichent qu'à la demande
+  const open = uiActualEdit.has(i);
+  const diff = store.dayStats(d).diff;
+  return `
+    <div role="group" aria-label="Heures réellement effectuées"
+         class="mt-3 rounded-2xl border p-3 border-tone-200 bg-tone-50/70 dark:border-tone-900/60 dark:bg-tone-900/15">
+      <div class="flex items-center justify-between gap-2">
+        <span class="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wider text-accent-ink">${icon('flame')} Réellement fait</span>
+        <span class="flex items-baseline gap-2">
+          <span class="text-xs font-extrabold text-accent-ink" data-out="diff">${diff ? fmtDiff(diff) : ''}</span>
+          <span class="font-display text-lg font-semibold" data-out="actual">${dur != null ? fmtDur(dur) : '—'}</span>
+        </span>
+      </div>
+      <p class="text-[13px] font-semibold text-muted mt-0.5" data-out="actual-line">${actualLine(d)}</p>
+      <div class="flex flex-wrap gap-1.5 mt-2.5">
+        <button type="button" class="chip" data-act="same" ${hasShift(d.planned) ? '' : 'disabled'}>${icon('check')} Comme prévu</button>
+        <button type="button" class="chip" data-act="plus" data-min="15">+15 min</button>
+        <button type="button" class="chip" data-act="plus" data-min="30">+30 min</button>
+        <button type="button" class="chip" data-act="plus" data-min="60">+1h</button>
+        <button type="button" class="chip" data-act="edit-actual" aria-expanded="${open}">✎ ${open ? 'Fermer' : 'Modifier'}</button>
+      </div>
+      ${open ? inputs : ''}
+    </div>`;
+}
+
+function actualLine(d) {
+  const a = d.actual;
+  if (!hasShift(a)) return 'Pas encore saisi';
+  return `${fmtClock(a.start)} – ${fmtClock(a.end)} · ${Number(a.brk) ? `pause ${a.brk} min` : 'sans pause'}`;
 }
 
 /** Rappel des règles quand un jour férié est travaillé. */
@@ -734,7 +759,7 @@ function holidayHint(i) {
   if (mai1) {
     text = `1er mai travaillé : il doit être payé double${rate && mins ? ` (≈ ${eur((mins / 60) * rate)} brut en plus)` : ''}.`;
   } else if (settings().convention === 'hcr') {
-    text = 'Férié travaillé : en HCR, avec 1 an d’ancienneté, 6 fériés par an sont garantis. Travaillé, il doit être compensé par un jour de repos ou une indemnité. Le jour où tu prends ta récup, choisis « 🔄 Récup ».';
+    text = 'Férié travaillé : à compenser par un jour de récup ou une indemnité (HCR). Le jour de ta récup, choisis « 🔄 Récup ».';
   } else {
     text = 'Férié travaillé : vérifie dans ta convention s’il est majoré ou récupéré.';
   }
@@ -748,13 +773,24 @@ function bodyHTML(i) {
       <span class="sr-only">Note</span>
       <input type="text" class="field font-semibold" data-f="note" maxlength="60" value="${esc(d.note)}" placeholder="${SEASONS[currentSeason()].notePlaceholder}">
     </label>`;
-  const head = `
-    <div class="flex items-start gap-2">
-      <div class="flex-1 min-w-0 flex flex-wrap gap-1.5">
-        ${Object.entries(DAY_KINDS).map(([k, v]) => `<button type="button" class="chip flex-none" data-act="kind" data-kind="${k}" aria-pressed="${d.off && d.kind === k}">${v.emoji} ${v.short}</button>`).join('')}
-      </div>
-      ${store.isDayEmpty(d) ? '' : `<button type="button" class="chip flex-none" data-act="clear" aria-label="Effacer la journée">${icon('x')}</button>`}
-    </div>`;
+  const clear = store.isDayEmpty(d) ? '' : `<button type="button" class="chip flex-none" data-act="clear" aria-label="Effacer la journée" title="Effacer la journée">${icon('trash')}</button>`;
+  const kinds = Object.entries(DAY_KINDS).map(([k, v]) =>
+    `<button type="button" class="chip" data-act="kind" data-kind="${k}" aria-pressed="${d.off && d.kind === k}">${v.emoji} ${v.short}</button>`).join('');
+  const showKinds = d.off || uiAbsence.has(i);
+  const head = showKinds
+    ? `<div class="flex items-start gap-2">
+        <div class="flex-1 min-w-0 flex flex-wrap gap-1.5">
+          ${d.off ? `<button type="button" class="chip" data-act="work">${icon('cup')} Je travaille</button>` : ''}
+          ${kinds}
+          ${d.off ? '' : `<button type="button" class="chip" data-act="absence" aria-label="Replier">${icon('left', 'w-3.5 h-3.5')}</button>`}
+        </div>
+        ${clear}
+      </div>`
+    : `<div class="flex items-center gap-2">
+        <button type="button" class="chip" data-act="absence" aria-expanded="false">${icon('leaf')} Repos ou absence ?</button>
+        <span class="flex-1"></span>
+        ${clear}
+      </div>`;
   if (d.off) {
     const hn = holidayName(addDays(monday, i));
     const credit = `compte ${fmtDur(perDay())} dans ta semaine (pas en heures supp.)`;
@@ -763,6 +799,7 @@ function bodyHTML(i) {
       cp: ['Bonnes vacances ! 🌴', `Congé payé · ${credit}`],
       ferie: [`Jour férié${hn ? ` · ${hn}` : ''} 🎉`, `Chômé · ${credit}`],
       maladie: ['Prends soin de toi 🤒', `Absence justifiée · ${credit}`],
+      recup: ['Bonne récup ! 🔄', `Récupération d’un férié · ${credit}`],
     }[d.kind];
     return `${head}
       <div class="mt-3 rounded-2xl ${d.kind === 'off' ? 'bg-sage-100/80 dark:bg-sage-700/25' : KIND_CLS[d.kind].split(' ').filter((c) => c.startsWith('bg-') || c.startsWith('dark:bg-')).join(' ')} p-4 text-center">
@@ -770,7 +807,8 @@ function bodyHTML(i) {
         <p class="text-sm font-semibold opacity-80">${esc(msg[1])}</p>
       </div>${note}`;
   }
-  return `${head}${shiftEditor(i, 'planned')}${shiftEditor(i, 'actual')}${holidayHint(i)}${note}`;
+  return `${shiftEditor(i, 'planned')}${shiftEditor(i, 'actual')}${holidayHint(i)}
+    <div class="mt-3">${head}</div>${note}`;
 }
 
 /** Remplace entièrement la carte d'un jour (après une action structurelle). */
@@ -790,6 +828,7 @@ function refreshDay(i) {
   const p = $('[data-out="planned"]', el); if (p) p.textContent = s.planned != null ? fmtDur(s.planned) : '—';
   const a = $('[data-out="actual"]', el); if (a) a.textContent = s.actual != null ? fmtDur(s.actual) : '—';
   const df = $('[data-out="diff"]', el); if (df) df.textContent = s.diff ? fmtDiff(s.diff) : '';
+  const al = $('[data-out="actual-line"]', el); if (al) al.textContent = actualLine(d);
   const same = $('[data-act="same"]', el); if (same) same.disabled = !hasShift(d.planned);
 }
 
@@ -849,10 +888,24 @@ function onDaysClick(e) {
       d.kind = btn.dataset.kind || 'off';
       haptic();
       return commit({ day: i });
+    case 'absence':
+      uiAbsence.has(i) ? uiAbsence.delete(i) : uiAbsence.add(i);
+      return rerenderDay(i);
+    case 'work':
+      d.off = false;
+      uiAbsence.delete(i);
+      haptic();
+      return commit({ day: i });
+    case 'edit-actual':
+      uiActualEdit.has(i) ? uiActualEdit.delete(i) : uiActualEdit.add(i);
+      rerenderDay(i);
+      if (uiActualEdit.has(i)) $(`[data-day="${i}"] [data-f="actual.start"]`)?.focus({ preventScroll: true });
+      return;
     case 'kind': {
       const k = btn.dataset.kind;
       if (d.off && d.kind === k) d.off = false;
       else { d.off = true; d.kind = k; }
+      uiAbsence.delete(i);
       haptic();
       return commit({ day: i });
     }
@@ -1129,7 +1182,7 @@ function renderSeasonPicker() {
     `<button type="button" class="chip" data-season="${id}" aria-pressed="${cur === id}">${label}</button>`).join('');
 }
 
-function openSettings() {
+function openSettings(section) {
   const s = settings();
   $('#set-name').value = s.name;
   $('#set-contract').value = s.contractHours;
@@ -1146,6 +1199,10 @@ function openSettings() {
   renderSeasonPicker();
   renderInstall();
   openDialog(dlgSettings);
+  if (section) {
+    const sec = $(`#sec-${section}`);
+    if (sec) { sec.open = true; requestAnimationFrame(() => sec.scrollIntoView({ block: 'start', behavior: 'smooth' })); }
+  }
 }
 
 function renderInstall() {
@@ -1299,7 +1356,7 @@ function bind() {
     }
   });
 
-  $('#btn-settings').addEventListener('click', openSettings);
+  $('#btn-settings').addEventListener('click', () => openSettings());
   $('#season-picker').addEventListener('click', (e) => {
     const b = e.target.closest('[data-season]');
     if (!b) return;
@@ -1312,7 +1369,7 @@ function bind() {
   $('#plan-rows').addEventListener('click', onPlanClick);
   $$('[data-tab]', dlgMonth).forEach((b) => b.addEventListener('click', () => { bilanTab = b.dataset.tab; renderBilan(); }));
   dlgMonth.addEventListener('click', (e) => {
-    if (e.target.closest('[data-open-settings]')) { closeDialog(dlgMonth); openSettings(); return; }
+    if (e.target.closest('[data-open-settings]')) { closeDialog(dlgMonth); openSettings('pay'); return; }
     const fp = e.target.closest('[data-fpaid]');
     if (fp) {
       const cur = settings().feriesPaid[yearCursor] || 0;
