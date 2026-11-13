@@ -12,7 +12,7 @@ import { buildICS } from './calendar.js';
 const { DAY_KINDS } = store;
 import { buildCardHTML, buildMonthText, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
 
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.5.2';
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const icon = (name, cls = 'w-4 h-4') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -1047,16 +1047,35 @@ function onPlanClick(e) {
 /* ------------------------------------------------------------------ */
 /* Export calendrier (.ics)                                            */
 /* ------------------------------------------------------------------ */
-function exportICS(days, filename) {
+let icsURL = null;
+let icsFile = null;
+
+/**
+ * iPhone : Safari bloque l'ouverture « scriptée » d'un fichier calendrier (surtout depuis l'app
+ * installée). On propose donc un vrai lien à toucher (ouvre l'écran « Tout ajouter » du
+ * Calendrier) et, en secours, le partage du fichier (Messages, Fichiers…), qui marche toujours.
+ * Ailleurs (Android, ordinateur) : téléchargement direct du .ics.
+ */
+function exportICS(days, filename, label) {
   const { text, count } = buildICS(days, { name: settings().name });
   if (!count) return toast('Rien à ajouter : saisis d’abord des horaires');
-  if (isIOS) {
-    // Safari iOS ouvre directement l'écran « Ajouter au calendrier » pour un fichier calendrier
-    location.href = `data:text/calendar;charset=utf-8,${encodeURIComponent(text)}`;
-  } else {
+  const plural = count > 1 ? 's' : '';
+  if (!isIOS) {
     downloadBlob(new Blob([text], { type: 'text/calendar;charset=utf-8' }), filename);
+    return toast(`${count} événement${plural} prêt${plural} pour ton calendrier 📅`);
   }
-  toast(`${count} événement${count > 1 ? 's' : ''} prêt${count > 1 ? 's' : ''} pour ton calendrier 📅`);
+  if (icsURL) URL.revokeObjectURL(icsURL);
+  icsURL = URL.createObjectURL(new Blob([text], { type: 'text/calendar' }));
+  icsFile = new File([text], filename, { type: 'text/calendar' });
+  $('#ics-open').href = icsURL;
+  $('#ics-summary').textContent = `${count} événement${plural} · ${label}`;
+  openDialog($('#dlg-ics'));
+}
+
+async function shareICS() {
+  if (!icsFile) return;
+  const r = await shareFile(icsFile, icsFile.name, 'Mon planning');
+  if (r === 'downloaded') toast('Fichier enregistré : ouvre-le pour l’ajouter au calendrier');
 }
 
 const weekDaysForICS = () => week.days.map((day, i) => ({ date: addDays(monday, i), day }));
@@ -1380,8 +1399,10 @@ function bind() {
     const mo = e.target.closest('[data-month]');
     if (mo) { monthCursor = { y: yearCursor, m: Number(mo.dataset.month) }; bilanTab = 'month'; renderBilan(); }
   });
-  $('#month-ics').addEventListener('click', () => exportICS(monthDaysForICS(monthCursor.y, monthCursor.m), `planning-${monthCursor.y}-${String(monthCursor.m + 1).padStart(2, '0')}.ics`));
-  $('#share-ics').addEventListener('click', () => exportICS(weekDaysForICS(), `planning-S${isoWeek(monday)}-${weekKey}.ics`));
+  $('#month-ics').addEventListener('click', () => exportICS(monthDaysForICS(monthCursor.y, monthCursor.m), `planning-${monthCursor.y}-${String(monthCursor.m + 1).padStart(2, '0')}.ics`, cap(monthLabel(monthCursor.y, monthCursor.m))));
+  $('#share-ics').addEventListener('click', () => exportICS(weekDaysForICS(), `planning-S${isoWeek(monday)}-${weekKey}.ics`, `semaine ${isoWeek(monday)} · ${weekRangeShort(monday)}`));
+  $('#ics-share').addEventListener('click', shareICS);
+  $('#ics-open').addEventListener('click', () => setTimeout(() => closeDialog($('#dlg-ics')), 600));
   $('#tpl-list').addEventListener('input', onTemplateInput);
   $('#tpl-list').addEventListener('change', onTemplateInput);
   $('#tpl-list').addEventListener('click', (e) => {
