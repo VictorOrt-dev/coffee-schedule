@@ -4,9 +4,10 @@ import {
   monthLabel, monthName, mondayOf, sameDay, shiftMinutes, toKey, weekRangeShort,
 } from './time.js';
 import * as store from './store.js';
+import { SEASONS, SEASON_IDS, cornerArt, logoSVG, renderParticles, seasonOf } from './seasons.js';
 import { buildCardHTML, buildMonthText, buildText, downloadBlob, fmtDiff, renderPNG, shareFile, shareText } from './share.js';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
 const icon = (name, cls = 'w-4 h-4') => `<svg class="${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -58,7 +59,7 @@ function renderHeader() {
   const h = new Date().getHours();
   const hello = h < 5 ? 'Bonne nuit' : h < 12 ? 'Bonjour' : h < 18 ? 'Bel après-midi' : 'Bonsoir';
   const name = settings().name?.trim();
-  $('#hello').textContent = `${hello} ☕︎`;
+  $('#hello').textContent = `${hello} ${SEASONS[currentSeason()].emoji}`;
   $('#greeting').textContent = name || 'Coffee & Schedule';
 }
 
@@ -85,7 +86,7 @@ function renderSummary() {
   if (value === 0) {
     badge = `<span class="chip pointer-events-none">${icon('cup')} À remplir</span>`;
   } else if (diff > 0) {
-    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold text-white bg-gradient-to-br from-caramel-400 to-caramel-600 shadow-soft">${icon('flame')} ${fmtDur(diff, { sign: true })} supp.</span>`;
+    badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold text-white bg-gradient-to-br from-tone-400 to-tone-600 shadow-soft">${icon('flame')} ${fmtDur(diff, { sign: true })} supp.</span>`;
   } else if (diff === 0) {
     badge = `<span class="inline-flex items-center gap-1.5 rounded-full px-3 h-9 text-sm font-extrabold bg-sage-100 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100">${icon('check')} Pile ${fmtDur(contract)}</span>`;
   } else {
@@ -123,7 +124,9 @@ function renderSummary() {
     </div>`;
 
   $('#summary').innerHTML = `
-    <svg class="absolute -right-5 -top-6 w-24 h-24 text-caramel-200/60 dark:text-caramel-800/40 -rotate-12 pointer-events-none" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 2C8 12 6 26 20 38 34 26 32 12 20 2Z" fill="currentColor"/><path d="M20 9v26" stroke="rgb(var(--surface))" stroke-width="1.6" stroke-linecap="round" opacity=".7"/></svg>
+    <div class="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none" aria-hidden="true">
+      <div class="season-art absolute -right-6 -top-7">${cornerArt(currentSeason(), 104)}</div>
+    </div>
     <div class="relative flex items-start justify-between gap-3">
       <div>
         <p class="text-[11px] font-extrabold uppercase tracking-wider text-muted">${useActual ? 'Effectué' : 'Prévu'} cette semaine</p>
@@ -167,8 +170,8 @@ function monthTeaserHTML() {
   else if (ms.planned) line = `${fmtDur(ms.planned)} prévues`;
   else line = 'Rien de saisi pour le moment';
   return `
-    <button type="button" data-act="open-month" class="relative mt-3 w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left border border-caramel-200/80 bg-caramel-50/80 dark:border-caramel-900/60 dark:bg-caramel-900/20 active:scale-[.98] transition">
-      <span class="flex-none w-9 h-9 rounded-xl grid place-items-center bg-caramel-100 text-caramel-700 dark:bg-caramel-900/50 dark:text-caramel-200">${icon('calendar', 'w-[18px] h-[18px]')}</span>
+    <button type="button" data-act="open-month" class="relative mt-3 w-full flex items-center gap-3 rounded-2xl px-3 py-2.5 text-left border border-tone-200/80 bg-tone-50/80 dark:border-tone-900/60 dark:bg-tone-900/20 active:scale-[.98] transition">
+      <span class="flex-none w-9 h-9 rounded-xl grid place-items-center bg-tone-100 text-tone-700 dark:bg-tone-900/50 dark:text-tone-200">${icon('calendar', 'w-[18px] h-[18px]')}</span>
       <span class="flex-1 min-w-0">
         <span class="block text-[11px] font-extrabold uppercase tracking-wider text-accent-ink">Total ${monthName(m)}</span>
         <span class="block font-bold text-[15px] truncate">${line}</span>
@@ -328,10 +331,10 @@ function dayHTML(i) {
   const open = expanded.has(i);
   const empty = store.isDayEmpty(d);
   return `
-  <article class="card overflow-hidden transition ${isToday ? 'ring-2 ring-accent/60' : ''}" data-day="${i}">
+  <article class="card transition ${isToday ? 'ring-2 ring-accent/60 season-cap' : ''}" data-day="${i}">
     <div class="flex items-center">
       <button type="button" class="flex-1 min-w-0 flex items-center gap-3 p-3 text-left" data-act="toggle" aria-expanded="${open}" aria-controls="day-body-${i}">
-        <span class="flex-none w-12 h-12 rounded-2xl grid place-items-center leading-none ${isToday ? 'bg-coffee-900 text-coffee-50 dark:bg-caramel-400 dark:text-coffee-950' : d.off ? 'bg-sage-100 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100' : 'bg-surface-2 text-ink'}">
+        <span class="flex-none w-12 h-12 rounded-2xl grid place-items-center leading-none ${isToday ? 'bg-coffee-900 text-coffee-50 dark:bg-tone-400 dark:text-coffee-950' : d.off ? 'bg-sage-100 text-sage-700 dark:bg-sage-700/40 dark:text-sage-100' : 'bg-surface-2 text-ink'}">
           <span class="text-center">
             <span class="block text-[10px] font-extrabold uppercase tracking-wider opacity-70">${DAY_SHORT[i]}</span>
             <span class="block font-display text-lg font-semibold mt-0.5">${date.getDate()}</span>
@@ -340,7 +343,7 @@ function dayHTML(i) {
         <span class="flex-1 min-w-0">
           <span class="flex items-center gap-2">
             <span class="font-display text-[17px] font-semibold">${DAY_NAMES[i]}</span>
-            ${isToday ? '<span class="rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-caramel-100 text-caramel-700 dark:bg-caramel-900/50 dark:text-caramel-200">Aujourd\'hui</span>' : ''}
+            ${isToday ? '<span class="rounded-full px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-tone-100 text-tone-700 dark:bg-tone-900/50 dark:text-tone-200">Aujourd\'hui</span>' : ''}
           </span>
           <span class="block text-[13px] font-semibold text-muted truncate" data-out="sub">${daySub(d)}</span>
         </span>
@@ -377,7 +380,7 @@ function shiftEditor(i, kind) {
   const diff = isActual ? store.dayStats(d).diff : null;
   return `
     <div role="group" aria-label="${isActual ? 'Horaires réels' : 'Horaires prévus'}"
-         class="mt-3 rounded-2xl border p-3 ${isActual ? 'border-caramel-200 bg-caramel-50/70 dark:border-caramel-900/60 dark:bg-caramel-900/15' : 'border-line bg-surface'}">
+         class="mt-3 rounded-2xl border p-3 ${isActual ? 'border-tone-200 bg-tone-50/70 dark:border-tone-900/60 dark:bg-tone-900/15' : 'border-line bg-surface'}">
       <div class="flex items-center justify-between mb-2 gap-2">
         <span class="flex items-center gap-1.5 text-[12px] font-extrabold uppercase tracking-wider ${isActual ? 'text-accent-ink' : 'text-ink-soft'}">
           ${icon(isActual ? 'flame' : 'calendar')} ${isActual ? 'Réellement effectué' : 'Horaires prévus'}
@@ -408,7 +411,7 @@ function bodyHTML(i) {
   const note = `
     <label class="block mt-3">
       <span class="sr-only">Note</span>
-      <input type="text" class="field font-semibold" data-f="note" maxlength="60" value="${esc(d.note)}" placeholder="Note (inventaire, livraison, fournée de Noël…)">
+      <input type="text" class="field font-semibold" data-f="note" maxlength="60" value="${esc(d.note)}" placeholder="${SEASONS[currentSeason()].notePlaceholder}">
     </label>`;
   const head = `
     <div class="flex items-center gap-2">
@@ -419,8 +422,8 @@ function bodyHTML(i) {
   if (d.off) {
     return `${head}
       <div class="mt-3 rounded-2xl bg-sage-100/80 dark:bg-sage-700/25 p-4 text-center">
-        <p class="font-display text-lg font-semibold text-sage-700 dark:text-sage-100">Repos bien mérité</p>
-        <p class="text-sm font-semibold text-sage-700/80 dark:text-sage-100/70">Plaid, chocolat chaud et pieds au chaud 🍂</p>
+        <p class="font-display text-lg font-semibold text-sage-700 dark:text-sage-100">${SEASONS[currentSeason()].offTitle}</p>
+        <p class="text-sm font-semibold text-sage-700/80 dark:text-sage-100/70">${SEASONS[currentSeason()].offText}</p>
       </div>${note}`;
   }
   return `${head}${shiftEditor(i, 'planned')}${shiftEditor(i, 'actual')}${note}`;
@@ -590,7 +593,7 @@ async function refreshPreview() {
   $('#share-loading').classList.remove('hidden');
   $('#share-img').classList.add('hidden');
   try {
-    const blob = await renderPNG(buildCardHTML(week, monday, settings(), shareMode));
+    const blob = await renderPNG(buildCardHTML(week, monday, settings(), shareMode, weekSeason()));
     if (token !== renderToken) return;
     shareBlob = blob;
     if (shareURL) URL.revokeObjectURL(shareURL);
@@ -618,12 +621,47 @@ let installPrompt = null;
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
+/* ------------------------------------------------------------------ */
+/* Saisons                                                             */
+/* ------------------------------------------------------------------ */
+/** Saison de l'interface : réglage manuel, sinon celle d'aujourd'hui. */
+const currentSeason = () => (settings().season !== 'auto' ? settings().season : seasonOf(new Date()));
+/** Saison de la carte partagée : celle de la semaine affichée (son jeudi). */
+const weekSeason = () => (settings().season !== 'auto' ? settings().season : seasonOf(addDays(monday, 3)));
+
+let appliedSeason = null;
+let appliedFx = null;
+function applySeason({ rerender = true } = {}) {
+  const season = currentSeason();
+  const fx = settings().seasonFx;
+  document.documentElement.dataset.season = season;
+  const tc = SEASONS[season].themeColor;
+  $$('meta[name="theme-color"]').forEach((m) => { m.content = (m.media || '').includes('dark') ? tc.dark : tc.light; });
+  $('#season-emoji').textContent = SEASONS[season].emoji;
+  if (season !== appliedSeason) $('#logo').innerHTML = logoSVG(season);
+  if (season !== appliedSeason || fx !== appliedFx) renderParticles($('#season-fx'), season, fx);
+  const changed = season !== appliedSeason;
+  appliedSeason = season;
+  appliedFx = fx;
+  if (rerender && changed) renderAll();
+}
+
+function renderSeasonPicker() {
+  const cur = settings().season;
+  const opts = [['auto', `Auto · ${SEASONS[seasonOf(new Date())].label}`],
+    ...SEASON_IDS.map((id) => [id, `${SEASONS[id].emoji} ${SEASONS[id].label}`])];
+  $('#season-picker').innerHTML = opts.map(([id, label]) =>
+    `<button type="button" class="chip" data-season="${id}" aria-pressed="${cur === id}">${label}</button>`).join('');
+}
+
 function openSettings() {
   const s = settings();
   $('#set-name').value = s.name;
   $('#set-contract').value = s.contractHours;
   $('#set-break').value = s.defaultBreak;
   $('#set-majoration').checked = !!s.showMajoration;
+  $('#set-fx').checked = !!s.seasonFx;
+  renderSeasonPicker();
   renderInstall();
   openDialog(dlgSettings);
 }
@@ -651,7 +689,9 @@ function onSettingsInput() {
     contractHours: Number($('#set-contract').value.replace(',', '.')) || 35,
     defaultBreak: Number($('#set-break').value) || 0,
     showMajoration: $('#set-majoration').checked,
+    seasonFx: $('#set-fx').checked,
   });
+  applySeason();
   renderHeader();
   renderSummary();
 }
@@ -682,7 +722,7 @@ function toast(message, { action, onAction, duration = 3200 } = {}) {
   el.className = 'cs-toast fixed left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm flex items-center gap-3 rounded-2xl bg-coffee-900 text-coffee-50 dark:bg-coffee-100 dark:text-coffee-950 shadow-lift px-4 py-3 text-sm font-bold animate-pop pointer-events-auto';
   el.style.top = 'max(.75rem, env(safe-area-inset-top))';
   el.setAttribute('role', 'status');
-  el.innerHTML = `<span class="flex-1">${esc(message)}</span>${action ? `<button type="button" class="text-caramel-300 dark:text-caramel-700 font-extrabold uppercase text-xs tracking-wider">${esc(action)}</button>` : ''}`;
+  el.innerHTML = `<span class="flex-1">${esc(message)}</span>${action ? `<button type="button" class="text-tone-300 dark:text-tone-700 font-extrabold uppercase text-xs tracking-wider">${esc(action)}</button>` : ''}`;
   if (action) el.querySelector('button').addEventListener('click', () => { el.remove(); onAction?.(); });
   host.append(el);
   clearTimeout(toastTimer);
@@ -763,7 +803,7 @@ function bind() {
   });
   $('#share-text').addEventListener('click', async () => {
     try {
-      const r = await shareText(buildText(week, monday, settings(), shareMode), shareTitle());
+      const r = await shareText(buildText(week, monday, settings(), shareMode, weekSeason()), shareTitle());
       if (r === 'copied') toast('Texte copié — colle-le dans ton message 📋');
     } catch {
       toast('Partage indisponible sur cet appareil');
@@ -771,7 +811,15 @@ function bind() {
   });
 
   $('#btn-settings').addEventListener('click', openSettings);
-  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration']) {
+  $('#season-picker').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-season]');
+    if (!b) return;
+    store.updateSettings({ season: b.dataset.season });
+    renderSeasonPicker();
+    applySeason();
+    haptic();
+  });
+  for (const id of ['#set-name', '#set-contract', '#set-break', '#set-majoration', '#set-fx']) {
     $(id).addEventListener('input', onSettingsInput);
     $(id).addEventListener('change', onSettingsInput);
   }
@@ -796,6 +844,7 @@ function bind() {
       const n = store.importJSON(await file.text());
       week = store.getWeek(weekKey);
       openSettings();
+      applySeason({ rerender: false });
       renderAll();
       toast(`${n} semaine${n > 1 ? 's' : ''} importée${n > 1 ? 's' : ''} ✓`);
     } catch {
@@ -805,6 +854,7 @@ function bind() {
   $('#reset-all').addEventListener('click', () => {
     if (!confirm('Effacer toutes les semaines et réglages de ce téléphone ? Cette action est définitive.')) return;
     store.resetAll();
+    applySeason({ rerender: false });
     closeDialog(dlgSettings);
     goToWeek(new Date());
     toast('Tout a été effacé');
@@ -815,7 +865,7 @@ function bind() {
 
   // Retour au premier plan : rafraîchit « aujourd'hui » et le message d'accueil
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { renderHeader(); renderDays(); renderTools(); }
+    if (document.visibilityState === 'visible') { applySeason({ rerender: false }); renderHeader(); renderSummary(); renderDays(); renderTools(); }
   });
 
   setupSwipe();
@@ -826,6 +876,7 @@ function bind() {
 /* ------------------------------------------------------------------ */
 $('#app-version').textContent = APP_VERSION;
 bind();
+applySeason({ rerender: false });
 goToWeek(new Date(), { animate: false });
 
 navigator.storage?.persist?.().catch(() => {});

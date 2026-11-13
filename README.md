@@ -10,6 +10,12 @@ coffee shop d'automne.
 - **Total du mois** (bouton 📅 ou encart « Total novembre ») : heures prévues et effectuées du mois, heures supp., jours travaillés, comparaison à la base mensualisée (35 h × 52 / 12 = 151h40), détail semaine par semaine et partage en texte. Les heures supp. restent calculées par semaine ; une semaine à cheval compte dans le mois où elle se termine
 - **Planning propre** : carte « Coffee & Schedule » en PNG (html2canvas, ×3 = 1188 px de large), en version *Planning prévu* ou *Bilan effectué*, partagée via l'API Web Share (WhatsApp, SMS…), ou téléchargée, ou envoyée en texte
 - **100 % local** : `localStorage`, sans compte ni serveur. Export / import d'une sauvegarde JSON
+- **Ambiance de saison** (automatique selon la date, ou choisie dans ⚙︎ Réglages) :
+  - ❄️ **Hiver** (déc.–févr.) : guimauve & canneberge, neige posée sur les cartes et le bouton, flocons qui tombent
+  - 🌸 **Printemps** (mars–mai) : matcha & fleur de cerisier, fleurs dans les coins, pétales qui volent
+  - ☀️ **Été** (juin–août) : sable, iced latte & menthe, rondelles de citron, bulles qui remontent, halo de soleil
+  - 🍂 **Automne** (sept.–nov.) : caramel & avoine, feuilles mortes
+  - Logo, messages des jours off, idées de notes et carte de partage changent aussi (la carte prend la saison de la semaine partagée). Mode sombre décliné pour chaque saison ; animations désactivables
 - **PWA** : installable sur l'écran d'accueil, fonctionne hors-ligne (Service Worker), mode sombre « espresso » automatique
 
 ## Structure
@@ -27,6 +33,7 @@ coffee-schedule/
 │   │   ├── app.js                 # Interface, saisie, dialogues, gestes
 │   │   ├── store.js               # localStorage + calculs de la semaine
 │   │   ├── share.js               # Carte, export PNG, Web Share, texte
+│   │   ├── seasons.js             # Ambiances de saison : textes, décors, logo, particules
 │   │   └── time.js                # Dates, semaines ISO, durées
 │   ├── fonts/                     # Nunito + Fredoka (auto-hébergées)
 │   ├── vendor/html2canvas.min.js  # Chargé à la demande
@@ -72,8 +79,9 @@ Le Service Worker ne s'active qu'en `http://localhost` ou en HTTPS.
 
 ## Personnalisation
 
-- **Couleurs** : `tailwind.config.js` (palettes `coffee`, `caramel`, `sage`, `berry`) et variables
-  CSS des modes clair/sombre dans `src/styles.css` (`:root`).
+- **Couleurs** : `tailwind.config.js` (palettes `coffee`, `tone` = accent de saison, `sage`, `berry`) et variables
+  CSS par saison et par mode clair/sombre dans `src/styles.css` (`:root[data-season=…]`).
+- **Saisons** : textes, couleurs de la carte et décors dans `docs/js/seasons.js`.
 - **Carte de partage** : styles `.share-card` dans `src/styles.css`, contenu dans `docs/js/share.js`.
   Les couleurs sont fixes (toujours claire) pour un rendu identique partout.
 - **Contrat / pause par défaut / prénom** : directement dans l'app (⚙︎ Réglages).

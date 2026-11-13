@@ -21,13 +21,23 @@
 
   <link rel="preload" href="fonts/nunito.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    // Applique la saison avant le premier affichage (évite un flash de l'automne)
+    (function () {
+      var m = new Date().getMonth(), s = m === 11 || m < 2 ? 'winter' : m < 5 ? 'spring' : m < 8 ? 'summer' : 'autumn';
+      try { var o = JSON.parse(localStorage.getItem('coffee-schedule:v1') || '{}').settings; if (o && o.season && o.season !== 'auto') s = o.season; } catch (e) {}
+      document.documentElement.setAttribute('data-season', s);
+    })();
+  </script>
   <link rel="stylesheet" href="css/app.css">
   <link rel="modulepreload" href="js/time.js">
   <link rel="modulepreload" href="js/store.js">
   <link rel="modulepreload" href="js/share.js">
+  <link rel="modulepreload" href="js/seasons.js">
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
+  <div id="season-fx" aria-hidden="true"></div>
   <!-- Icônes (sprite SVG) -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
@@ -55,7 +65,7 @@
   <div class="mx-auto max-w-md min-h-dvh pt-safe">
     <!-- En-tête -->
     <header class="px-4 pt-4 flex items-center gap-3">
-      <img src="icons/icon.svg" alt="" width="44" height="44" class="w-11 h-11 rounded-2xl shadow-soft flex-none">
+      <span id="logo" class="w-11 h-11 rounded-2xl shadow-soft flex-none overflow-hidden"><img src="icons/icon.svg" alt="" width="44" height="44"></span>
       <div class="flex-1 min-w-0">
         <p id="hello" class="text-[11px] font-extrabold uppercase tracking-[.16em] text-accent-ink">Bonjour</p>
         <h1 id="greeting" class="font-display text-[22px] font-semibold leading-tight truncate">Bonjour</h1>
@@ -70,7 +80,7 @@
 
     <main id="main" class="px-4 pb-36">
       <!-- Navigation par semaine -->
-      <nav class="mt-4 card flex items-center p-1.5" aria-label="Semaine">
+      <nav class="mt-4 card season-cap flex items-center p-1.5" aria-label="Semaine">
         <button id="prev-week" type="button" class="icon-btn" aria-label="Semaine précédente"><svg class="w-5 h-5"><use href="#i-left"/></svg></button>
         <div class="relative flex-1 text-center py-1">
           <span id="week-num" class="block text-[11px] font-extrabold uppercase tracking-wider text-muted">Semaine</span>
@@ -84,7 +94,7 @@
       </div>
 
       <!-- Résumé -->
-      <section id="summary" class="card mt-3 p-5 relative overflow-hidden" aria-live="polite"></section>
+      <section id="summary" class="card season-snow mt-3 p-5" aria-live="polite"></section>
 
       <!-- Raccourcis semaine -->
       <div id="tools" class="mt-3 -mx-4 px-4 flex gap-2 overflow-x-auto scrollbar-none"></div>
@@ -103,7 +113,7 @@
     <div class="h-8 bg-gradient-to-t from-bg to-transparent"></div>
     <div class="bg-bg pb-safe px-4 pointer-events-auto">
       <div class="mx-auto max-w-md">
-        <button id="btn-share" type="button" class="btn-primary w-full h-14 text-base rounded-3xl">
+        <button id="btn-share" type="button" class="btn-primary season-cap w-full h-14 text-base rounded-3xl">
           <svg class="w-5 h-5"><use href="#i-share"/></svg> Mon planning propre
         </button>
       </div>
@@ -193,7 +203,20 @@
             <span class="block font-bold text-[15px]">Détail des majorations</span>
             <span class="block text-xs font-semibold text-muted">+25 % les 8 premières h supp., +50 % au-delà (indicatif)</span>
           </span>
-          <input id="set-majoration" type="checkbox" class="w-6 h-6 accent-caramel-500 flex-none">
+          <input id="set-majoration" type="checkbox" class="w-6 h-6 accent-tone-500 flex-none">
+        </label>
+      </div>
+
+      <h3 class="field-label mt-5">Ambiance</h3>
+      <div class="card p-4">
+        <p class="text-sm font-semibold text-ink-soft">La couleur et les décors suivent les saisons. Tu peux aussi en choisir une.</p>
+        <div id="season-picker" class="flex flex-wrap gap-2 mt-3" role="group" aria-label="Saison"></div>
+        <label class="flex items-center justify-between gap-3 mt-4">
+          <span>
+            <span class="block font-bold text-[15px]">Animations de saison</span>
+            <span class="block text-xs font-semibold text-muted">Neige, pétales, feuilles ou bulles en arrière-plan</span>
+          </span>
+          <input id="set-fx" type="checkbox" class="w-6 h-6 accent-tone-500 flex-none">
         </label>
       </div>
 
@@ -211,7 +234,7 @@
       </div>
 
       <button id="reset-all" type="button" class="btn-ghost w-full mt-4 text-berry-500"><svg class="w-5 h-5"><use href="#i-trash"/></svg> Tout effacer</button>
-      <p class="mt-2 text-center text-xs font-semibold text-muted">Coffee &amp; Schedule · v<span id="app-version">1.0.0</span> · fait avec ☕ et 🍂</p>
+      <p class="mt-2 text-center text-xs font-semibold text-muted">Coffee &amp; Schedule · v<span id="app-version">1.0.0</span> · fait avec ☕ et <span id="season-emoji">🍂</span></p>
     </div>
   </dialog>
 

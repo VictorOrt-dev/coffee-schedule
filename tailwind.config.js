@@ -22,18 +22,8 @@ module.exports = {
           900: '#33211A',  // espresso
           950: '#1F1410',  // ristretto
         },
-        caramel: {
-          50: '#FDF6EC',
-          100: '#FAE8CC',
-          200: '#F4D09A',
-          300: '#ECB566',
-          400: '#E29C45',  // ambre
-          500: '#D0822F',  // caramel
-          600: '#B06625',
-          700: '#8C4E21',
-          800: '#6E3E1F',
-          900: '#5A341C',
-        },
+        // Accent de saison (caramel en automne, canneberge en hiver, sakura au printemps, menthe en été)
+        tone: Object.fromEntries([50, 100, 200, 300, 400, 500, 600, 700, 800, 900].map((k) => [k, token(`tone-${k}`)])),
         sage: { 100: '#E9EDDC', 300: '#C2CDA4', 500: '#86965F', 700: '#5C6A3C' },
         berry: { 100: '#F6DEDA', 500: '#B5473A', 700: '#8A3329' },
 

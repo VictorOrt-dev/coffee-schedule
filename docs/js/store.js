@@ -9,6 +9,8 @@ export const DEFAULT_SETTINGS = {
   contractHours: 35,
   defaultBreak: 30,
   showMajoration: true,
+  season: 'auto',   // 'auto' | 'winter' | 'spring' | 'summer' | 'autumn'
+  seasonFx: true,   // particules d'arrière-plan
 };
 
 export const blankShift = () => ({ start: '', end: '', brk: null });
@@ -34,6 +36,8 @@ function normalize(raw) {
   Object.assign(out.settings, raw.settings || {});
   out.settings.contractHours = clampNum(out.settings.contractHours, 1, 80, 35);
   out.settings.defaultBreak = clampNum(out.settings.defaultBreak, 0, 240, 30);
+  if (!['auto', 'winter', 'spring', 'summer', 'autumn'].includes(out.settings.season)) out.settings.season = 'auto';
+  out.settings.seasonFx = out.settings.seasonFx !== false;
   for (const [k, w] of Object.entries(raw.weeks || {})) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !w || !Array.isArray(w.days)) continue;
     out.weeks[k] = { days: Array.from({ length: 7 }, (_, i) => normalizeDay(w.days[i])) };
